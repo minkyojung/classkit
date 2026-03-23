@@ -4,6 +4,7 @@ import SwiftData
 struct CreateClassroomSheet: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.dismiss) private var dismiss
+    @Query private var teachers: [Teacher]
 
     @State private var studentName = ""
     @State private var studentGrade = ""
@@ -97,10 +98,13 @@ struct CreateClassroomSheet: View {
     }
 
     private func createClassroom() {
+        let teacher = teachers.first
+
         let trimmedSubjectName = subjectName.trimmingCharacters(in: .whitespaces)
         var subject: Subject?
         if !trimmedSubjectName.isEmpty {
             subject = Subject(name: trimmedSubjectName, gradeLevel: studentGrade)
+            subject?.teacher = teacher
             modelContext.insert(subject!)
         }
 
@@ -114,6 +118,7 @@ struct CreateClassroomSheet: View {
             colorHex: selectedColorHex
         )
         classroom.studentSchool = studentSchool.trimmingCharacters(in: .whitespaces)
+        classroom.teacher = teacher
 
         modelContext.insert(classroom)
         dismiss()
