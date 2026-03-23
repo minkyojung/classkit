@@ -11,6 +11,7 @@ struct PDFCanvasView: View {
     @State private var currentPageIndex = 0
     @State private var showShareSheet = false
     @State private var exportedPDFData: Data?
+    @State private var zoomScale: CGFloat = 1.0
 
     private var currentAnnotation: PDFPageAnnotation? {
         document.annotations.first { $0.pageIndex == currentPageIndex }
@@ -19,19 +20,33 @@ struct PDFCanvasView: View {
     var body: some View {
         NavigationStack {
             GeometryReader { geometry in
-                ZStack {
-                    // PDF page as background
-                    PDFPageView(
-                        pdfData: document.fileData,
-                        pageIndex: currentPageIndex
-                    )
+                ScrollView([.horizontal, .vertical], showsIndicators: false) {
+                    ZStack {
+                        // PDF page as background
+                        PDFPageView(
+                            pdfData: document.fileData,
+                            pageIndex: currentPageIndex
+                        )
 
-                    // PencilKit overlay for annotation
-                    CanvasView(
-                        drawingData: annotationBinding,
-                        backgroundColor: .clear
+                        // PencilKit overlay for annotation
+                        CanvasView(
+                            drawingData: annotationBinding,
+                            backgroundColor: .clear,
+                            drawingPolicy: .pencilOnly
+                        )
+                    }
+                    .scaleEffect(zoomScale)
+                    .frame(
+                        width: geometry.size.width * zoomScale,
+                        height: geometry.size.height * zoomScale
                     )
                 }
+                .gesture(
+                    MagnificationGesture()
+                        .onChanged { value in
+                            zoomScale = min(max(value, 0.5), 3.0)
+                        }
+                )
             }
             .ignoresSafeArea(.container, edges: .bottom)
             .navigationTitle(document.title)

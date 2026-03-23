@@ -13,6 +13,7 @@ struct CanvasContainerView: View {
     @State private var showCompleteConfirm = false
     @State private var showShareSheet = false
     @State private var exportedPDFData: Data?
+    @State private var zoomScale: CGFloat = 1.0
 
     private var currentNote: LessonNote? {
         lesson.notes.first { $0.pageIndex == currentPageIndex }
@@ -29,19 +30,37 @@ struct CanvasContainerView: View {
     var body: some View {
         NavigationStack {
             GeometryReader { geometry in
-                ZStack {
-                    // Background pattern
-                    NoteBackgroundView(
-                        backgroundType: currentNote?.backgroundType ?? selectedBackground,
-                        size: geometry.size
-                    )
+                ScrollView([.horizontal, .vertical], showsIndicators: false) {
+                    ZStack {
+                        // Background pattern
+                        NoteBackgroundView(
+                            backgroundType: currentNote?.backgroundType ?? selectedBackground,
+                            size: canvasSize(for: geometry.size)
+                        )
 
-                    // PencilKit canvas overlay
-                    CanvasView(
-                        drawingData: drawingBinding,
-                        backgroundColor: .clear
+                        // PencilKit canvas overlay — pencil only, finger scrolls
+                        CanvasView(
+                            drawingData: drawingBinding,
+                            backgroundColor: .clear,
+                            drawingPolicy: .pencilOnly
+                        )
+                        .frame(
+                            width: canvasSize(for: geometry.size).width,
+                            height: canvasSize(for: geometry.size).height
+                        )
+                    }
+                    .scaleEffect(zoomScale)
+                    .frame(
+                        width: canvasSize(for: geometry.size).width * zoomScale,
+                        height: canvasSize(for: geometry.size).height * zoomScale
                     )
                 }
+                .gesture(
+                    MagnificationGesture()
+                        .onChanged { value in
+                            zoomScale = min(max(value, 0.5), 3.0)
+                        }
+                )
             }
             .ignoresSafeArea(.container, edges: .bottom)
             .navigationTitle(lesson.title)
@@ -56,6 +75,7 @@ struct CanvasContainerView: View {
 
                 ToolbarItemGroup(placement: .primaryAction) {
                     backgroundPickerButton
+                    zoomControls
                     shareButton
                     completeButton
                     pageControls
@@ -75,6 +95,13 @@ struct CanvasContainerView: View {
                 Text("수업을 완료하시겠습니까? 노트가 저장됩니다.")
             }
         }
+    }
+
+    // MARK: - Canvas Size
+
+    private func canvasSize(for viewSize: CGSize) -> CGSize {
+        // A4-ish aspect ratio, wider than view for scrollable area
+        CGSize(width: max(viewSize.width, 768), height: max(viewSize.height, 1024))
     }
 
     // MARK: - Drawing Binding
@@ -104,6 +131,32 @@ struct CanvasContainerView: View {
                 }
             }
         )
+    }
+
+    // MARK: - Zoom Controls
+
+    private var zoomControls: some View {
+        HStack(spacing: 2) {
+            Button {
+                withAnimation { zoomScale = max(zoomScale - 0.25, 0.5) }
+            } label: {
+                Image(systemName: "minus.magnifyingglass")
+            }
+
+            Button {
+                withAnimation { zoomScale = 1.0 }
+            } label: {
+                Text("\(Int(zoomScale * 100))%")
+                    .font(.caption.monospacedDigit())
+                    .frame(minWidth: 40)
+            }
+
+            Button {
+                withAnimation { zoomScale = min(zoomScale + 0.25, 3.0) }
+            } label: {
+                Image(systemName: "plus.magnifyingglass")
+            }
+        }
     }
 
     // MARK: - Background Picker
@@ -198,21 +251,47 @@ struct CanvasContainerView: View {
                         saveCurrentPage()
                         currentPageIndex = index
                     } label: {
-                        RoundedRectangle(cornerRadius: 4)
-                            .fill(index == currentPageIndex ? Color.accentColor.opacity(0.2) : Color.secondary.opacity(0.1))
-                            .frame(width: 40, height: 30)
-                            .overlay(
-                                Text("\(index + 1)")
-                                    .font(.caption2)
-                                    .foregroundStyle(index == currentPageIndex ? .primary : .secondary)
-                            )
-                            .overlay(
-                                RoundedRectangle(cornerRadius: 4)
-                                    .stroke(index == currentPageIndex ? Color.accentColor : Color.clear, lineWidth: 1.5)
-                            )
+                        thumbnailView(for: index)
                     }
                     .buttonStyle(.plain)
                 }
+            }
+        }
+    }
+
+    private func thumbnailView(for index: Int) -> some View {
+        let isSelected = index == currentPageIndex
+
+        return Group {
+            if let note = lesson.notes.first(where: { $0.pageIndex == index }),
+               let drawing = try? PKDrawing(data: note.drawingData),
+               !drawing.strokes.isEmpty {
+                // Real thumbnail from drawing
+                let image = drawing.image(from: CGRect(x: 0, y: 0, width: 768, height: 1024), scale: 0.1)
+                Image(uiImage: image)
+                    .resizable()
+                    .aspectRatio(3/4, contentMode: .fit)
+                    .frame(width: 44, height: 58)
+                    .background(Color.white)
+                    .clipShape(RoundedRectangle(cornerRadius: 4))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 4)
+                            .stroke(isSelected ? Color.accentColor : Color.secondary.opacity(0.3), lineWidth: isSelected ? 2 : 0.5)
+                    )
+            } else {
+                // Empty page placeholder
+                RoundedRectangle(cornerRadius: 4)
+                    .fill(isSelected ? Color.accentColor.opacity(0.1) : Color.white)
+                    .frame(width: 44, height: 58)
+                    .overlay(
+                        Text("\(index + 1)")
+                            .font(.caption2)
+                            .foregroundStyle(isSelected ? .primary : .secondary)
+                    )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 4)
+                            .stroke(isSelected ? Color.accentColor : Color.secondary.opacity(0.3), lineWidth: isSelected ? 2 : 0.5)
+                    )
             }
         }
     }

@@ -25,7 +25,8 @@ struct SubmissionCanvasView: View {
 
                     CanvasView(
                         drawingData: $drawingData,
-                        backgroundColor: .clear
+                        backgroundColor: .clear,
+                        drawingPolicy: .pencilOnly
                     )
                 }
             }

@@ -36,7 +36,8 @@ struct FeedbackCanvasView: View {
                     if !showOriginalOnly {
                         CanvasView(
                             drawingData: $feedbackDrawingData,
-                            backgroundColor: .clear
+                            backgroundColor: .clear,
+                            drawingPolicy: .pencilOnly
                         )
                     }
                 }
