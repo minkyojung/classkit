@@ -6,6 +6,7 @@
 //
 
 import SwiftUI
+import SwiftData
 
 @main
 struct ClasskitApp: App {
@@ -13,5 +14,12 @@ struct ClasskitApp: App {
         WindowGroup {
             ContentView()
         }
+        .modelContainer(for: [
+            Teacher.self,
+            Subject.self,
+            Classroom.self,
+            Lesson.self,
+            LessonNote.self
+        ])
     }
 }
