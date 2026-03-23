@@ -1,5 +1,7 @@
 import SwiftUI
 import SwiftData
+import PDFKit
+import UniformTypeIdentifiers
 
 struct ClassroomDetailView: View {
     @Bindable var classroom: Classroom
@@ -9,6 +11,9 @@ struct ClassroomDetailView: View {
     @State private var activeLesson: Lesson?
     @State private var newLessonTitle = ""
     @State private var showNewLessonAlert = false
+    @State private var showPDFImporter = false
+    @State private var showPDFCanvas = false
+    @State private var activePDFDocument: PDFDocumentModel?
 
     var body: some View {
         ScrollView {
@@ -17,6 +22,7 @@ struct ClassroomDetailView: View {
                 scheduleCard
                 startLessonButton
                 lessonsCard
+                documentsCard
             }
             .padding()
         }
@@ -26,6 +32,18 @@ struct ClassroomDetailView: View {
             if let lesson = activeLesson {
                 CanvasContainerView(lesson: lesson)
             }
+        }
+        .fullScreenCover(isPresented: $showPDFCanvas) {
+            if let doc = activePDFDocument {
+                PDFCanvasView(document: doc)
+            }
+        }
+        .fileImporter(
+            isPresented: $showPDFImporter,
+            allowedContentTypes: [.pdf],
+            allowsMultipleSelection: false
+        ) { result in
+            handlePDFImport(result)
         }
         .alert("새 수업", isPresented: $showNewLessonAlert) {
             TextField("수업 제목 (예: 3단원 이차방정식)", text: $newLessonTitle)
@@ -133,6 +151,87 @@ struct ClassroomDetailView: View {
         } label: {
             Label("수업 일정", systemImage: "clock.fill")
         }
+    }
+
+    // MARK: - Documents Card
+
+    private var documentsCard: some View {
+        GroupBox {
+            VStack(spacing: 8) {
+                if classroom.documents.isEmpty {
+                    Button {
+                        showPDFImporter = true
+                    } label: {
+                        Label("PDF 교재 추가", systemImage: "doc.badge.plus")
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 8)
+                    }
+                } else {
+                    ForEach(classroom.documents.sorted { $0.createdAt > $1.createdAt }) { doc in
+                        Button {
+                            activePDFDocument = doc
+                            showPDFCanvas = true
+                        } label: {
+                            HStack {
+                                Image(systemName: "doc.fill")
+                                    .foregroundStyle(.red)
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(doc.title)
+                                        .font(.subheadline.weight(.medium))
+                                    Text("\(doc.pageCount)페이지")
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                }
+                                Spacer()
+                                Image(systemName: "chevron.right")
+                                    .font(.caption)
+                                    .foregroundStyle(.tertiary)
+                            }
+                            .padding(.vertical, 4)
+                        }
+                        .buttonStyle(.plain)
+                    }
+
+                    Divider()
+
+                    Button {
+                        showPDFImporter = true
+                    } label: {
+                        Label("PDF 추가", systemImage: "plus")
+                            .font(.subheadline)
+                    }
+                }
+            }
+        } label: {
+            Label("교재", systemImage: "books.vertical.fill")
+        }
+    }
+
+    // MARK: - PDF Import
+
+    private func handlePDFImport(_ result: Result<[URL], Error>) {
+        guard case .success(let urls) = result,
+              let url = urls.first else { return }
+
+        guard url.startAccessingSecurityScopedResource() else { return }
+        defer { url.stopAccessingSecurityScopedResource() }
+
+        guard let data = try? Data(contentsOf: url) else { return }
+
+        let pageCount: Int
+        if let pdfDoc = PDFKit.PDFDocument(data: data) {
+            pageCount = pdfDoc.pageCount
+        } else {
+            return
+        }
+
+        let title = url.deletingPathExtension().lastPathComponent
+        let document = PDFDocumentModel(title: title, fileData: data, pageCount: pageCount)
+        document.classroom = classroom
+        modelContext.insert(document)
+
+        activePDFDocument = document
+        showPDFCanvas = true
     }
 
     // MARK: - Lessons Card

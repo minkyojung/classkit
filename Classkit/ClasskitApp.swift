@@ -19,7 +19,9 @@ struct ClasskitApp: App {
             Subject.self,
             Classroom.self,
             Lesson.self,
-            LessonNote.self
+            LessonNote.self,
+            PDFDocumentModel.self,
+            PDFPageAnnotation.self
         ])
     }
 }

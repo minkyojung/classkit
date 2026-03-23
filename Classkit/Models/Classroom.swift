@@ -19,6 +19,9 @@ final class Classroom {
     @Relationship(deleteRule: .cascade)
     var lessons: [Lesson]
 
+    @Relationship(deleteRule: .cascade)
+    var documents: [PDFDocumentModel]
+
     @Relationship(inverse: \Teacher.classrooms)
     var teacher: Teacher?
 
@@ -40,6 +43,7 @@ final class Classroom {
         self.memo = memo
         self.colorHex = colorHex
         self.lessons = []
+        self.documents = []
         self.createdAt = Date()
     }
 }
