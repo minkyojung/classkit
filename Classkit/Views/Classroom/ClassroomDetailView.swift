@@ -22,6 +22,7 @@ struct ClassroomDetailView: View {
                 startLessonButton
                 lessonsCard
                 assignmentsCard
+                ScoreChartView(classroom: classroom)
                 documentsCard
             }
             .padding()
