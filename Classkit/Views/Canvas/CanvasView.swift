@@ -28,8 +28,11 @@ struct CanvasView: UIViewRepresentable {
     }
 
     func updateUIView(_ canvas: PKCanvasView, context: Context) {
-        // Avoid feedback loop: only update if data changed externally
-        if context.coordinator.isUpdatingFromDelegate { return }
+        // Skip if this update was triggered by our own delegate
+        guard !context.coordinator.shouldSkipNextUpdate else {
+            context.coordinator.shouldSkipNextUpdate = false
+            return
+        }
 
         if let drawing = try? PKDrawing(data: drawingData),
            drawing.dataRepresentation() != canvas.drawing.dataRepresentation() {
@@ -44,16 +47,15 @@ struct CanvasView: UIViewRepresentable {
     final class Coordinator: NSObject, PKCanvasViewDelegate {
         @Binding var drawingData: Data
         var toolPicker: PKToolPicker?
-        var isUpdatingFromDelegate = false
+        var shouldSkipNextUpdate = false
 
         init(drawingData: Binding<Data>) {
             _drawingData = drawingData
         }
 
         func canvasViewDrawingDidChange(_ canvasView: PKCanvasView) {
-            isUpdatingFromDelegate = true
+            shouldSkipNextUpdate = true
             drawingData = canvasView.drawing.dataRepresentation()
-            isUpdatingFromDelegate = false
         }
     }
 }

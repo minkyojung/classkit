@@ -97,10 +97,12 @@ struct CreateClassroomSheet: View {
     }
 
     private func createClassroom() {
-        let subject = Subject(
-            name: subjectName.trimmingCharacters(in: .whitespaces),
-            gradeLevel: studentGrade
-        )
+        let trimmedSubjectName = subjectName.trimmingCharacters(in: .whitespaces)
+        var subject: Subject?
+        if !trimmedSubjectName.isEmpty {
+            subject = Subject(name: trimmedSubjectName, gradeLevel: studentGrade)
+            modelContext.insert(subject!)
+        }
 
         let classroom = Classroom(
             studentName: studentName.trimmingCharacters(in: .whitespaces),
@@ -113,7 +115,6 @@ struct CreateClassroomSheet: View {
         )
         classroom.studentSchool = studentSchool.trimmingCharacters(in: .whitespaces)
 
-        modelContext.insert(subject)
         modelContext.insert(classroom)
         dismiss()
     }
