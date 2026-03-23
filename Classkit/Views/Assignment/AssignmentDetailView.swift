@@ -6,12 +6,14 @@ struct AssignmentDetailView: View {
     @Environment(\.modelContext) private var modelContext
 
     @State private var showSubmissionCanvas = false
+    @State private var showFeedbackCanvas = false
 
     var body: some View {
         ScrollView {
             VStack(spacing: 20) {
                 infoCard
                 statusCard
+                feedbackCard
                 actionSection
             }
             .padding()
@@ -20,6 +22,50 @@ struct AssignmentDetailView: View {
         .navigationBarTitleDisplayMode(.large)
         .fullScreenCover(isPresented: $showSubmissionCanvas) {
             SubmissionCanvasView(assignment: assignment)
+        }
+        .fullScreenCover(isPresented: $showFeedbackCanvas) {
+            FeedbackCanvasView(assignment: assignment)
+        }
+    }
+
+    // MARK: - Feedback Card
+
+    @ViewBuilder
+    private var feedbackCard: some View {
+        if assignment.status == .reviewed, let submission = assignment.submission {
+            GroupBox {
+                VStack(alignment: .leading, spacing: 12) {
+                    if let score = submission.score {
+                        HStack {
+                            Label("점수", systemImage: "star.fill")
+                            Spacer()
+                            Text("\(score)점")
+                                .font(.title3.bold())
+                                .foregroundStyle(.orange)
+                        }
+                    }
+
+                    if let comment = submission.comment, !comment.isEmpty {
+                        Divider()
+                        Text(comment)
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                    }
+
+                    if let reviewedAt = submission.reviewedAt {
+                        Divider()
+                        HStack {
+                            Label("첨삭일", systemImage: "calendar")
+                            Spacer()
+                            Text(reviewedAt, format: .dateTime.month().day().hour().minute())
+                                .foregroundStyle(.secondary)
+                        }
+                        .font(.caption)
+                    }
+                }
+            } label: {
+                Label("첨삭 결과", systemImage: "checkmark.seal.fill")
+            }
         }
     }
 
@@ -150,10 +196,22 @@ struct AssignmentDetailView: View {
 
             case .submitted:
                 Button {
+                    showFeedbackCanvas = true
+                } label: {
+                    Label("첨삭하기", systemImage: "pencil.and.scribble")
+                        .font(.headline)
+                        .frame(maxWidth: .infinity)
+                        .padding()
+                        .background(Color.red.opacity(0.85))
+                        .foregroundStyle(.white)
+                        .clipShape(RoundedRectangle(cornerRadius: 12))
+                }
+
+                Button {
                     showSubmissionCanvas = true
                 } label: {
-                    Label("제출 내용 수정", systemImage: "pencil")
-                        .font(.headline)
+                    Label("제출 내용 보기", systemImage: "eye")
+                        .font(.subheadline)
                         .frame(maxWidth: .infinity)
                         .padding()
                         .background(Color.secondary.opacity(0.15))
@@ -163,7 +221,7 @@ struct AssignmentDetailView: View {
 
             case .reviewed:
                 Button {
-                    showSubmissionCanvas = true
+                    showFeedbackCanvas = true
                 } label: {
                     Label("첨삭 결과 보기", systemImage: "eye")
                         .font(.headline)
@@ -171,6 +229,18 @@ struct AssignmentDetailView: View {
                         .padding()
                         .background(Color.green.opacity(0.15))
                         .foregroundStyle(.green)
+                        .clipShape(RoundedRectangle(cornerRadius: 12))
+                }
+
+                Button {
+                    showFeedbackCanvas = true
+                } label: {
+                    Label("첨삭 수정", systemImage: "pencil.and.scribble")
+                        .font(.subheadline)
+                        .frame(maxWidth: .infinity)
+                        .padding()
+                        .background(Color.secondary.opacity(0.15))
+                        .foregroundStyle(.primary)
                         .clipShape(RoundedRectangle(cornerRadius: 12))
                 }
             }
