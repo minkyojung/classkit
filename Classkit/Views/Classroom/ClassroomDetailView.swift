@@ -13,6 +13,7 @@ struct ClassroomDetailView: View {
     @State private var showPDFImporter = false
     @State private var activePDFDocument: PDFDocumentModel?
     @State private var showCreateAssignment = false
+    @State private var showScanner = false
 
     var body: some View {
         ScrollView {
@@ -23,6 +24,7 @@ struct ClassroomDetailView: View {
                 lessonsCard
                 assignmentsCard
                 ScoreChartView(classroom: classroom)
+                scannedProblemsCard
                 documentsCard
             }
             .padding()
@@ -44,6 +46,9 @@ struct ClassroomDetailView: View {
         }
         .sheet(isPresented: $showCreateAssignment) {
             CreateAssignmentSheet(classroom: classroom)
+        }
+        .sheet(isPresented: $showScanner) {
+            ScannerView(classroom: classroom)
         }
         .alert("새 수업", isPresented: $showNewLessonAlert) {
             TextField("수업 제목 (예: 3단원 이차방정식)", text: $newLessonTitle)
@@ -198,6 +203,61 @@ struct ClassroomDetailView: View {
                     }
                 }
             }
+        }
+    }
+
+    // MARK: - Scanned Problems Card
+
+    private var scannedProblemsCard: some View {
+        GroupBox {
+            VStack(spacing: 8) {
+                if classroom.scannedProblems.isEmpty {
+                    Button {
+                        showScanner = true
+                    } label: {
+                        Label("문제 스캔하기", systemImage: "doc.text.viewfinder")
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 8)
+                    }
+                } else {
+                    ForEach(classroom.scannedProblems.sorted { $0.createdAt > $1.createdAt }) { problem in
+                        HStack {
+                            if let uiImage = UIImage(data: problem.imageData) {
+                                Image(uiImage: uiImage)
+                                    .resizable()
+                                    .scaledToFill()
+                                    .frame(width: 44, height: 44)
+                                    .clipShape(RoundedRectangle(cornerRadius: 6))
+                            }
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(problem.title)
+                                    .font(.subheadline.weight(.medium))
+                                    .lineLimit(1)
+                                Text(problem.recognizedText.prefix(50))
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                    .lineLimit(1)
+                            }
+                            Spacer()
+                            Text(problem.createdAt, format: .dateTime.month().day())
+                                .font(.caption2)
+                                .foregroundStyle(.tertiary)
+                        }
+                        .padding(.vertical, 2)
+                    }
+
+                    Divider()
+
+                    Button {
+                        showScanner = true
+                    } label: {
+                        Label("스캔 추가", systemImage: "plus")
+                            .font(.subheadline)
+                    }
+                }
+            }
+        } label: {
+            Label("스캔 문제", systemImage: "doc.text.viewfinder")
         }
     }
 

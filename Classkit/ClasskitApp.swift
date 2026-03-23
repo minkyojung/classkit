@@ -24,7 +24,8 @@ struct ClasskitApp: App {
             PDFPageAnnotation.self,
             Assignment.self,
             AssignmentAttachment.self,
-            Submission.self
+            Submission.self,
+            ScannedProblem.self
         ])
     }
 }
