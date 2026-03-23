@@ -19,6 +19,9 @@ final class Assignment {
     @Relationship(deleteRule: .cascade)
     var attachments: [AssignmentAttachment]
 
+    @Relationship(deleteRule: .cascade)
+    var submission: Submission?
+
     @Relationship(inverse: \Classroom.assignments)
     var classroom: Classroom?
 

@@ -23,7 +23,8 @@ struct ClasskitApp: App {
             PDFDocumentModel.self,
             PDFPageAnnotation.self,
             Assignment.self,
-            AssignmentAttachment.self
+            AssignmentAttachment.self,
+            Submission.self
         ])
     }
 }

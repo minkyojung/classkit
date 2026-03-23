@@ -173,7 +173,12 @@ struct ClassroomDetailView: View {
                     }
                 } else {
                     ForEach(classroom.assignments.sorted { $0.createdAt > $1.createdAt }) { assignment in
-                        AssignmentRowView(assignment: assignment)
+                        NavigationLink {
+                            AssignmentDetailView(assignment: assignment)
+                        } label: {
+                            AssignmentRowView(assignment: assignment)
+                        }
+                        .buttonStyle(.plain)
                     }
 
                     Divider()
