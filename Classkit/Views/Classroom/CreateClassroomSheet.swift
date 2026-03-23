@@ -15,9 +15,11 @@ struct CreateClassroomSheet: View {
     @State private var selectedColorHex = "#007AFF"
 
     private let gradeOptions = [
+        "5세", "6세", "7세",
         "초1", "초2", "초3", "초4", "초5", "초6",
         "중1", "중2", "중3",
-        "고1", "고2", "고3"
+        "고1", "고2", "고3",
+        "N수", "대학생", "성인"
     ]
 
     private let colorOptions = [
