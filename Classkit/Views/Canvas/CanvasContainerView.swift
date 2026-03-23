@@ -500,11 +500,15 @@ struct CanvasContainerView: View {
                 UIColor.white.setFill()
                 UIRectFill(pageSize)
 
-                // Draw note content
+                // Draw PencilKit content at high resolution
                 if let drawing = try? PKDrawing(data: note.drawingData) {
-                    let image = drawing.image(from: pageSize, scale: 2.0)
+                    let image = drawing.image(from: pageSize, scale: 4.0)
                     image.draw(in: pageSize)
                 }
+
+                // Draw overlays (text, image, shape)
+                let cgContext = context.cgContext
+                OverlayRenderer.render(note.overlays, in: cgContext, bounds: pageSize)
             }
 
             // If no notes, create blank page

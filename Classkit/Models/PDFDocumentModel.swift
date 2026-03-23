@@ -32,6 +32,9 @@ final class PDFPageAnnotation {
     @Attribute(.externalStorage) var drawingData: Data
     var updatedAt: Date
 
+    @Relationship(deleteRule: .cascade)
+    var overlays: [CanvasOverlay]
+
     @Relationship(inverse: \PDFDocumentModel.annotations)
     var document: PDFDocumentModel?
 
@@ -39,6 +42,7 @@ final class PDFPageAnnotation {
         self.id = UUID()
         self.pageIndex = pageIndex
         self.drawingData = drawingData
+        self.overlays = []
         self.updatedAt = Date()
     }
 }

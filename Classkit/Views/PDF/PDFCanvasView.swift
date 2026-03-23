@@ -2,6 +2,7 @@ import SwiftUI
 import SwiftData
 import PDFKit
 import PencilKit
+import PhotosUI
 
 struct PDFCanvasView: View {
     @Bindable var document: PDFDocumentModel
@@ -14,6 +15,11 @@ struct PDFCanvasView: View {
     @State private var zoomScale: CGFloat = 1.0
     @State private var lastZoomScale: CGFloat = 1.0
     @State private var canvasCoordinator: CanvasView.Coordinator?
+
+    // Overlay state
+    @State private var selectedOverlayID: UUID?
+    @State private var showShapePicker = false
+    @State private var selectedPhoto: PhotosPickerItem?
 
     private var currentAnnotation: PDFPageAnnotation? {
         document.annotations.first { $0.pageIndex == currentPageIndex }
@@ -50,6 +56,7 @@ struct PDFCanvasView: View {
                 }
 
                 ToolbarItemGroup(placement: .primaryAction) {
+                    overlayToolbarButton
                     undoRedoButtons
                     zoomControls
                     pageControls
@@ -59,6 +66,12 @@ struct PDFCanvasView: View {
                 ToolbarItem(placement: .bottomBar) {
                     pageThumbnailStrip
                 }
+            }
+            .popover(isPresented: $showShapePicker) {
+                shapePickerContent
+            }
+            .onChange(of: selectedPhoto) { _, newItem in
+                Task { await loadPhoto(from: newItem) }
             }
         }
     }
@@ -84,6 +97,19 @@ struct PDFCanvasView: View {
                 }
             )
             .frame(width: pageSize.width, height: pageSize.height)
+
+            // Overlays (text, image, shape) on PDF
+            ForEach(currentOverlays) { overlay in
+                OverlayItemView(
+                    overlay: overlay,
+                    isSelected: selectedOverlayID == overlay.id,
+                    onSelect: { selectedOverlayID = overlay.id },
+                    onDelete: { deleteOverlay(overlay) }
+                )
+            }
+        }
+        .onTapGesture {
+            selectedOverlayID = nil
         }
     }
 
@@ -105,6 +131,141 @@ struct PDFCanvasView: View {
             }
             .accessibilityLabel("다시 실행")
         }
+    }
+
+    // MARK: - Overlays
+
+    private var currentOverlays: [CanvasOverlay] {
+        currentAnnotation?.overlays ?? []
+    }
+
+    private func ensureCurrentAnnotation() -> PDFPageAnnotation {
+        if let annotation = annotationForCurrentPage() {
+            return annotation
+        }
+        let annotation = PDFPageAnnotation(pageIndex: currentPageIndex)
+        annotation.document = document
+        document.annotations.append(annotation)
+        modelContext.insert(annotation)
+        return annotation
+    }
+
+    private func addTextOverlay() {
+        let annotation = ensureCurrentAnnotation()
+        let centerX = pageSize.width / 2
+        let centerY = pageSize.height / 2
+        let overlay = CanvasOverlay.textOverlay(x: centerX, y: centerY)
+        overlay.pdfAnnotation = annotation
+        annotation.overlays.append(overlay)
+        modelContext.insert(overlay)
+        selectedOverlayID = overlay.id
+    }
+
+    private func addShapeOverlay(_ shapeType: ShapeType) {
+        let annotation = ensureCurrentAnnotation()
+        let centerX = pageSize.width / 2
+        let centerY = pageSize.height / 2
+        let overlay = CanvasOverlay.shapeOverlay(x: centerX, y: centerY, shapeType: shapeType)
+        overlay.pdfAnnotation = annotation
+        annotation.overlays.append(overlay)
+        modelContext.insert(overlay)
+        selectedOverlayID = overlay.id
+        showShapePicker = false
+    }
+
+    private func loadPhoto(from item: PhotosPickerItem?) async {
+        guard let item,
+              let data = try? await item.loadTransferable(type: Data.self),
+              let uiImage = UIImage(data: data) else { return }
+
+        let maxDimension: CGFloat = min(pageSize.width * 0.6, 400)
+        let scale = min(maxDimension / uiImage.size.width, maxDimension / uiImage.size.height, 1.0)
+        let width = uiImage.size.width * scale
+        let height = uiImage.size.height * scale
+
+        let annotation = ensureCurrentAnnotation()
+        let overlay = CanvasOverlay.imageOverlay(
+            x: pageSize.width / 2,
+            y: pageSize.height / 2,
+            imageData: data,
+            width: width,
+            height: height
+        )
+        overlay.pdfAnnotation = annotation
+        annotation.overlays.append(overlay)
+        modelContext.insert(overlay)
+        selectedOverlayID = overlay.id
+        selectedPhoto = nil
+    }
+
+    private func deleteOverlay(_ overlay: CanvasOverlay) {
+        if selectedOverlayID == overlay.id {
+            selectedOverlayID = nil
+        }
+        if let annotation = overlay.pdfAnnotation {
+            annotation.overlays.removeAll { $0.id == overlay.id }
+        }
+        modelContext.delete(overlay)
+    }
+
+    // MARK: - Overlay Toolbar
+
+    private var overlayToolbarButton: some View {
+        Menu {
+            Button {
+                addTextOverlay()
+            } label: {
+                Label("텍스트", systemImage: "textformat")
+            }
+
+            PhotosPicker(selection: $selectedPhoto, matching: .images) {
+                Label("이미지", systemImage: "photo")
+            }
+
+            Button {
+                showShapePicker = true
+            } label: {
+                Label("도형", systemImage: "square.on.circle")
+            }
+        } label: {
+            Image(systemName: "plus.rectangle.on.rectangle")
+        }
+        .accessibilityLabel("오버레이 추가")
+    }
+
+    private var shapePickerContent: some View {
+        VStack(spacing: 16) {
+            Text("도형 선택")
+                .font(.headline)
+                .padding(.top)
+
+            LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 2), spacing: 12) {
+                shapeButton(.rectangle, icon: "rectangle", label: "사각형")
+                shapeButton(.circle, icon: "circle", label: "원")
+                shapeButton(.line, icon: "line.diagonal", label: "선")
+                shapeButton(.arrow, icon: "arrow.right", label: "화살표")
+            }
+            .padding(.horizontal)
+            .padding(.bottom)
+        }
+        .frame(width: 200)
+    }
+
+    private func shapeButton(_ type: ShapeType, icon: String, label: String) -> some View {
+        Button {
+            addShapeOverlay(type)
+        } label: {
+            VStack(spacing: 6) {
+                Image(systemName: icon)
+                    .font(.title2)
+                    .frame(width: 50, height: 50)
+                    .background(Color.secondary.opacity(0.1))
+                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                Text(label)
+                    .font(.caption)
+            }
+        }
+        .buttonStyle(.plain)
     }
 
     // MARK: - Zoom
@@ -253,11 +414,15 @@ struct PDFCanvasView: View {
                 page.draw(with: .mediaBox, to: cgContext)
                 cgContext.restoreGState()
 
-                // Draw annotation overlay
-                if let annotation = document.annotations.first(where: { $0.pageIndex == pageIndex }),
-                   let drawing = try? PKDrawing(data: annotation.drawingData) {
-                    let image = drawing.image(from: pageBounds, scale: 2.0)
-                    image.draw(in: pageBounds)
+                if let annotation = document.annotations.first(where: { $0.pageIndex == pageIndex }) {
+                    // Draw PencilKit annotation at high resolution
+                    if let drawing = try? PKDrawing(data: annotation.drawingData) {
+                        let image = drawing.image(from: pageBounds, scale: 4.0)
+                        image.draw(in: pageBounds)
+                    }
+
+                    // Draw overlays (text, image, shape)
+                    OverlayRenderer.render(annotation.overlays, in: cgContext, bounds: pageBounds)
                 }
             }
         }

@@ -42,6 +42,9 @@ final class CanvasOverlay {
     @Relationship(inverse: \LessonNote.overlays)
     var note: LessonNote?
 
+    @Relationship(inverse: \PDFPageAnnotation.overlays)
+    var pdfAnnotation: PDFPageAnnotation?
+
     init(
         type: OverlayType,
         x: Double,
