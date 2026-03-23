@@ -34,6 +34,8 @@ struct CanvasView: UIViewRepresentable {
     var penColor: UIColor = .black
     var penWidth: CGFloat = 3
     var isReadOnly: Bool = false
+    var showToolPicker: Bool = true
+    var onCoordinatorReady: ((Coordinator) -> Void)?
 
     func makeUIView(context: Context) -> PKCanvasView {
         let canvas = PKCanvasView()
@@ -49,13 +51,19 @@ struct CanvasView: UIViewRepresentable {
 
         applyTool(to: canvas)
 
-        // Show system tool picker
-        if !isReadOnly {
+        // Show system tool picker with async first responder for reliability
+        if !isReadOnly && showToolPicker {
             let toolPicker = PKToolPicker()
             toolPicker.setVisible(true, forFirstResponder: canvas)
             toolPicker.addObserver(canvas)
-            canvas.becomeFirstResponder()
             context.coordinator.toolPicker = toolPicker
+            context.coordinator.canvasView = canvas
+
+            // Delay becomeFirstResponder to ensure view hierarchy is ready
+            DispatchQueue.main.async {
+                canvas.becomeFirstResponder()
+                self.onCoordinatorReady?(context.coordinator)
+            }
         }
 
         return canvas
@@ -94,6 +102,7 @@ struct CanvasView: UIViewRepresentable {
     final class Coordinator: NSObject, PKCanvasViewDelegate {
         @Binding var drawingData: Data
         var toolPicker: PKToolPicker?
+        weak var canvasView: PKCanvasView?
         var shouldSkipNextUpdate = false
 
         init(drawingData: Binding<Data>) {
@@ -103,6 +112,22 @@ struct CanvasView: UIViewRepresentable {
         func canvasViewDrawingDidChange(_ canvasView: PKCanvasView) {
             shouldSkipNextUpdate = true
             drawingData = canvasView.drawing.dataRepresentation()
+        }
+
+        func undo() {
+            canvasView?.undoManager?.undo()
+        }
+
+        func redo() {
+            canvasView?.undoManager?.redo()
+        }
+
+        var canUndo: Bool {
+            canvasView?.undoManager?.canUndo ?? false
+        }
+
+        var canRedo: Bool {
+            canvasView?.undoManager?.canRedo ?? false
         }
     }
 }

@@ -12,51 +12,46 @@ struct PDFCanvasView: View {
     @State private var showShareSheet = false
     @State private var exportedPDFData: Data?
     @State private var zoomScale: CGFloat = 1.0
+    @State private var lastZoomScale: CGFloat = 1.0
+    @State private var canvasCoordinator: CanvasView.Coordinator?
 
     private var currentAnnotation: PDFPageAnnotation? {
         document.annotations.first { $0.pageIndex == currentPageIndex }
+    }
+
+    /// Actual PDF page size in points
+    private var pageSize: CGSize {
+        PDFPageHelper.pageSize(from: document.fileData, pageIndex: currentPageIndex)
+            ?? CGSize(width: 612, height: 792) // US Letter fallback
     }
 
     var body: some View {
         NavigationStack {
             GeometryReader { geometry in
                 ScrollView([.horizontal, .vertical], showsIndicators: false) {
-                    ZStack {
-                        // PDF page as background
-                        PDFPageView(
-                            pdfData: document.fileData,
-                            pageIndex: currentPageIndex
+                    pdfCanvasContent
+                        .scaleEffect(zoomScale)
+                        .frame(
+                            width: pageSize.width * zoomScale,
+                            height: pageSize.height * zoomScale
                         )
-
-                        // PencilKit overlay for annotation
-                        CanvasView(
-                            drawingData: annotationBinding,
-                            backgroundColor: .clear,
-                            drawingPolicy: .pencilOnly
-                        )
-                    }
-                    .scaleEffect(zoomScale)
-                    .frame(
-                        width: geometry.size.width * zoomScale,
-                        height: geometry.size.height * zoomScale
-                    )
                 }
-                .gesture(
-                    MagnificationGesture()
-                        .onChanged { value in
-                            zoomScale = min(max(value, 0.5), 3.0)
-                        }
-                )
+                .gesture(zoomGesture)
             }
             .ignoresSafeArea(.container, edges: .bottom)
             .navigationTitle(document.title)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("닫기") { dismiss() }
+                    Button("닫기") {
+                        saveCurrentAnnotation()
+                        dismiss()
+                    }
                 }
 
                 ToolbarItemGroup(placement: .primaryAction) {
+                    undoRedoButtons
+                    zoomControls
                     pageControls
                     shareButton
                 }
@@ -66,6 +61,95 @@ struct PDFCanvasView: View {
                 }
             }
         }
+    }
+
+    // MARK: - PDF + Canvas Content
+
+    private var pdfCanvasContent: some View {
+        ZStack {
+            // PDF page rendered as image at exact mediaBox size
+            PDFPageView(
+                pdfData: document.fileData,
+                pageIndex: currentPageIndex
+            )
+            .frame(width: pageSize.width, height: pageSize.height)
+
+            // PencilKit overlay at the same exact size
+            CanvasView(
+                drawingData: annotationBinding,
+                backgroundColor: .clear,
+                drawingPolicy: .pencilOnly,
+                onCoordinatorReady: { coordinator in
+                    canvasCoordinator = coordinator
+                }
+            )
+            .frame(width: pageSize.width, height: pageSize.height)
+        }
+    }
+
+    // MARK: - Undo / Redo
+
+    private var undoRedoButtons: some View {
+        HStack(spacing: 4) {
+            Button {
+                canvasCoordinator?.undo()
+            } label: {
+                Image(systemName: "arrow.uturn.backward")
+            }
+            .accessibilityLabel("실행 취소")
+
+            Button {
+                canvasCoordinator?.redo()
+            } label: {
+                Image(systemName: "arrow.uturn.forward")
+            }
+            .accessibilityLabel("다시 실행")
+        }
+    }
+
+    // MARK: - Zoom
+
+    private var zoomGesture: some Gesture {
+        MagnificationGesture()
+            .onChanged { value in
+                zoomScale = min(max(lastZoomScale * value, 0.5), 4.0)
+            }
+            .onEnded { value in
+                zoomScale = min(max(lastZoomScale * value, 0.5), 4.0)
+                lastZoomScale = zoomScale
+            }
+    }
+
+    private var zoomControls: some View {
+        HStack(spacing: 2) {
+            Button {
+                withAnimation { adjustZoom(by: -0.25) }
+            } label: {
+                Image(systemName: "minus.magnifyingglass")
+            }
+
+            Button {
+                withAnimation {
+                    zoomScale = 1.0
+                    lastZoomScale = 1.0
+                }
+            } label: {
+                Text("\(Int(zoomScale * 100))%")
+                    .font(.caption.monospacedDigit())
+                    .frame(minWidth: 40)
+            }
+
+            Button {
+                withAnimation { adjustZoom(by: 0.25) }
+            } label: {
+                Image(systemName: "plus.magnifyingglass")
+            }
+        }
+    }
+
+    private func adjustZoom(by delta: CGFloat) {
+        zoomScale = min(max(zoomScale + delta, 0.5), 4.0)
+        lastZoomScale = zoomScale
     }
 
     // MARK: - Annotation Binding
@@ -96,12 +180,19 @@ struct PDFCanvasView: View {
         )
     }
 
+    private func saveCurrentAnnotation() {
+        if let annotation = annotationForCurrentPage() {
+            annotation.updatedAt = Date()
+        }
+    }
+
     // MARK: - Page Controls
 
     private var pageControls: some View {
         HStack(spacing: 4) {
             Button {
                 guard currentPageIndex > 0 else { return }
+                saveCurrentAnnotation()
                 currentPageIndex -= 1
             } label: {
                 Image(systemName: "chevron.left")
@@ -114,6 +205,7 @@ struct PDFCanvasView: View {
 
             Button {
                 guard currentPageIndex < document.pageCount - 1 else { return }
+                saveCurrentAnnotation()
                 currentPageIndex += 1
             } label: {
                 Image(systemName: "chevron.right")
@@ -126,6 +218,7 @@ struct PDFCanvasView: View {
 
     private var shareButton: some View {
         Button {
+            saveCurrentAnnotation()
             exportedPDFData = exportAnnotatedPDF()
             showShareSheet = true
         } label: {
@@ -143,9 +236,9 @@ struct PDFCanvasView: View {
             return document.fileData
         }
 
-        let renderer = UIGraphicsPDFRenderer(
-            bounds: pdfDocument.page(at: 0)?.bounds(for: .mediaBox) ?? CGRect(x: 0, y: 0, width: 612, height: 792)
-        )
+        let firstPageBounds = pdfDocument.page(at: 0)?.bounds(for: .mediaBox)
+            ?? CGRect(x: 0, y: 0, width: 612, height: 792)
+        let renderer = UIGraphicsPDFRenderer(bounds: firstPageBounds)
 
         return renderer.pdfData { context in
             for pageIndex in 0..<pdfDocument.pageCount {
@@ -155,12 +248,9 @@ struct PDFCanvasView: View {
 
                 let cgContext = context.cgContext
                 cgContext.saveGState()
-
-                // Flip coordinate system for PDF rendering
                 cgContext.translateBy(x: 0, y: pageBounds.height)
                 cgContext.scaleBy(x: 1, y: -1)
                 page.draw(with: .mediaBox, to: cgContext)
-
                 cgContext.restoreGState()
 
                 // Draw annotation overlay
@@ -180,6 +270,7 @@ struct PDFCanvasView: View {
             HStack(spacing: 8) {
                 ForEach(0..<document.pageCount, id: \.self) { index in
                     Button {
+                        saveCurrentAnnotation()
                         currentPageIndex = index
                     } label: {
                         pdfThumbnail(for: index)
