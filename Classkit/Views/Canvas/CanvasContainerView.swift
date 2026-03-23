@@ -1,6 +1,7 @@
 import SwiftUI
 import SwiftData
 import PencilKit
+import PhotosUI
 
 struct CanvasContainerView: View {
     @Bindable var lesson: Lesson
@@ -14,6 +15,12 @@ struct CanvasContainerView: View {
     @State private var showShareSheet = false
     @State private var exportedPDFData: Data?
     @State private var zoomScale: CGFloat = 1.0
+
+    // Overlay state
+    @State private var selectedOverlayID: UUID?
+    @State private var showOverlayToolbar = false
+    @State private var showShapePicker = false
+    @State private var selectedPhoto: PhotosPickerItem?
 
     private var currentNote: LessonNote? {
         lesson.notes.first { $0.pageIndex == currentPageIndex }
@@ -32,10 +39,12 @@ struct CanvasContainerView: View {
             GeometryReader { geometry in
                 ScrollView([.horizontal, .vertical], showsIndicators: false) {
                     ZStack {
+                        let size = canvasSize(for: geometry.size)
+
                         // Background pattern
                         NoteBackgroundView(
                             backgroundType: currentNote?.backgroundType ?? selectedBackground,
-                            size: canvasSize(for: geometry.size)
+                            size: size
                         )
 
                         // PencilKit canvas overlay — pencil only, finger scrolls
@@ -44,10 +53,21 @@ struct CanvasContainerView: View {
                             backgroundColor: .clear,
                             drawingPolicy: .pencilOnly
                         )
-                        .frame(
-                            width: canvasSize(for: geometry.size).width,
-                            height: canvasSize(for: geometry.size).height
-                        )
+                        .frame(width: size.width, height: size.height)
+
+                        // Canvas overlays (text, image, shape)
+                        ForEach(currentOverlays) { overlay in
+                            OverlayItemView(
+                                overlay: overlay,
+                                isSelected: selectedOverlayID == overlay.id,
+                                onSelect: { selectedOverlayID = overlay.id },
+                                onDelete: { deleteOverlay(overlay) }
+                            )
+                        }
+                    }
+                    .onTapGesture {
+                        // Deselect overlay when tapping empty area
+                        selectedOverlayID = nil
                     }
                     .scaleEffect(zoomScale)
                     .frame(
@@ -74,6 +94,7 @@ struct CanvasContainerView: View {
                 }
 
                 ToolbarItemGroup(placement: .primaryAction) {
+                    overlayToolbarButton
                     backgroundPickerButton
                     zoomControls
                     shareButton
@@ -88,6 +109,12 @@ struct CanvasContainerView: View {
             .popover(isPresented: $showBackgroundPicker) {
                 backgroundPickerContent
             }
+            .popover(isPresented: $showShapePicker) {
+                shapePickerContent
+            }
+            .onChange(of: selectedPhoto) { _, newItem in
+                Task { await loadPhoto(from: newItem) }
+            }
             .alert("수업 완료", isPresented: $showCompleteConfirm) {
                 Button("완료", role: .destructive) { completeLesson() }
                 Button("취소", role: .cancel) { }
@@ -95,6 +122,135 @@ struct CanvasContainerView: View {
                 Text("수업을 완료하시겠습니까? 노트가 저장됩니다.")
             }
         }
+    }
+
+    // MARK: - Overlays
+
+    private var currentOverlays: [CanvasOverlay] {
+        currentNote?.overlays ?? []
+    }
+
+    private func ensureCurrentNote() -> LessonNote {
+        if let note = noteForCurrentPage() {
+            return note
+        }
+        let note = LessonNote(
+            pageIndex: currentPageIndex,
+            drawingData: Data(),
+            backgroundType: selectedBackground
+        )
+        note.lesson = lesson
+        lesson.notes.append(note)
+        modelContext.insert(note)
+        return note
+    }
+
+    private func addTextOverlay() {
+        let note = ensureCurrentNote()
+        let overlay = CanvasOverlay.textOverlay(x: 200, y: 200)
+        overlay.note = note
+        note.overlays.append(overlay)
+        modelContext.insert(overlay)
+        selectedOverlayID = overlay.id
+    }
+
+    private func addShapeOverlay(_ shapeType: ShapeType) {
+        let note = ensureCurrentNote()
+        let overlay = CanvasOverlay.shapeOverlay(x: 200, y: 200, shapeType: shapeType)
+        overlay.note = note
+        note.overlays.append(overlay)
+        modelContext.insert(overlay)
+        selectedOverlayID = overlay.id
+        showShapePicker = false
+    }
+
+    private func loadPhoto(from item: PhotosPickerItem?) async {
+        guard let item,
+              let data = try? await item.loadTransferable(type: Data.self),
+              let uiImage = UIImage(data: data) else { return }
+
+        let maxDimension: CGFloat = 400
+        let scale = min(maxDimension / uiImage.size.width, maxDimension / uiImage.size.height, 1.0)
+        let width = uiImage.size.width * scale
+        let height = uiImage.size.height * scale
+
+        let note = ensureCurrentNote()
+        let overlay = CanvasOverlay.imageOverlay(x: 200, y: 200, imageData: data, width: width, height: height)
+        overlay.note = note
+        note.overlays.append(overlay)
+        modelContext.insert(overlay)
+        selectedOverlayID = overlay.id
+        selectedPhoto = nil
+    }
+
+    private func deleteOverlay(_ overlay: CanvasOverlay) {
+        if selectedOverlayID == overlay.id {
+            selectedOverlayID = nil
+        }
+        if let note = overlay.note {
+            note.overlays.removeAll { $0.id == overlay.id }
+        }
+        modelContext.delete(overlay)
+    }
+
+    // MARK: - Overlay Toolbar
+
+    private var overlayToolbarButton: some View {
+        Menu {
+            Button {
+                addTextOverlay()
+            } label: {
+                Label("텍스트", systemImage: "textformat")
+            }
+
+            PhotosPicker(selection: $selectedPhoto, matching: .images) {
+                Label("이미지", systemImage: "photo")
+            }
+
+            Button {
+                showShapePicker = true
+            } label: {
+                Label("도형", systemImage: "square.on.circle")
+            }
+        } label: {
+            Image(systemName: "plus.rectangle.on.rectangle")
+        }
+        .accessibilityLabel("오버레이 추가")
+    }
+
+    private var shapePickerContent: some View {
+        VStack(spacing: 16) {
+            Text("도형 선택")
+                .font(.headline)
+                .padding(.top)
+
+            LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 2), spacing: 12) {
+                shapeButton(.rectangle, icon: "rectangle", label: "사각형")
+                shapeButton(.circle, icon: "circle", label: "원")
+                shapeButton(.line, icon: "line.diagonal", label: "선")
+                shapeButton(.arrow, icon: "arrow.right", label: "화살표")
+            }
+            .padding(.horizontal)
+            .padding(.bottom)
+        }
+        .frame(width: 200)
+    }
+
+    private func shapeButton(_ type: ShapeType, icon: String, label: String) -> some View {
+        Button {
+            addShapeOverlay(type)
+        } label: {
+            VStack(spacing: 6) {
+                Image(systemName: icon)
+                    .font(.title2)
+                    .frame(width: 50, height: 50)
+                    .background(Color.secondary.opacity(0.1))
+                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                Text(label)
+                    .font(.caption)
+            }
+        }
+        .buttonStyle(.plain)
     }
 
     // MARK: - Canvas Size

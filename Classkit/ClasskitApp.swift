@@ -25,7 +25,8 @@ struct ClasskitApp: App {
             Assignment.self,
             AssignmentAttachment.self,
             Submission.self,
-            ScannedProblem.self
+            ScannedProblem.self,
+            CanvasOverlay.self
         ])
     }
 }

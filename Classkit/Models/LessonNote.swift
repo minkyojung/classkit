@@ -17,6 +17,9 @@ final class LessonNote {
     var createdAt: Date
     var updatedAt: Date
 
+    @Relationship(deleteRule: .cascade)
+    var overlays: [CanvasOverlay]
+
     @Relationship(inverse: \Lesson.notes)
     var lesson: Lesson?
 
@@ -29,6 +32,7 @@ final class LessonNote {
         self.pageIndex = pageIndex
         self.drawingData = drawingData
         self.backgroundType = backgroundType
+        self.overlays = []
         self.createdAt = Date()
         self.updatedAt = Date()
     }
