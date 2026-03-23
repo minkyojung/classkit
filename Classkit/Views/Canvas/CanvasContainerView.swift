@@ -21,6 +21,8 @@ struct CanvasContainerView: View {
     @State private var showOverlayToolbar = false
     @State private var showShapePicker = false
     @State private var selectedPhoto: PhotosPickerItem?
+    @State private var canvasCoordinator: CanvasView.Coordinator?
+    @State private var lastZoomScale: CGFloat = 1.0
 
     private var currentNote: LessonNote? {
         lesson.notes.first { $0.pageIndex == currentPageIndex }
@@ -51,7 +53,10 @@ struct CanvasContainerView: View {
                         CanvasView(
                             drawingData: drawingBinding,
                             backgroundColor: .clear,
-                            drawingPolicy: .pencilOnly
+                            drawingPolicy: .pencilOnly,
+                            onCoordinatorReady: { coordinator in
+                                canvasCoordinator = coordinator
+                            }
                         )
                         .frame(width: size.width, height: size.height)
 
@@ -78,7 +83,11 @@ struct CanvasContainerView: View {
                 .gesture(
                     MagnificationGesture()
                         .onChanged { value in
-                            zoomScale = min(max(value, 0.5), 3.0)
+                            zoomScale = min(max(lastZoomScale * value, 0.5), 3.0)
+                        }
+                        .onEnded { value in
+                            zoomScale = min(max(lastZoomScale * value, 0.5), 3.0)
+                            lastZoomScale = zoomScale
                         }
                 )
             }
@@ -94,6 +103,7 @@ struct CanvasContainerView: View {
                 }
 
                 ToolbarItemGroup(placement: .primaryAction) {
+                    undoRedoButtons
                     overlayToolbarButton
                     backgroundPickerButton
                     zoomControls
@@ -121,6 +131,26 @@ struct CanvasContainerView: View {
             } message: {
                 Text("수업을 완료하시겠습니까? 노트가 저장됩니다.")
             }
+        }
+    }
+
+    // MARK: - Undo / Redo
+
+    private var undoRedoButtons: some View {
+        HStack(spacing: 4) {
+            Button {
+                canvasCoordinator?.undo()
+            } label: {
+                Image(systemName: "arrow.uturn.backward")
+            }
+            .accessibilityLabel("실행 취소")
+
+            Button {
+                canvasCoordinator?.redo()
+            } label: {
+                Image(systemName: "arrow.uturn.forward")
+            }
+            .accessibilityLabel("다시 실행")
         }
     }
 
@@ -294,13 +324,19 @@ struct CanvasContainerView: View {
     private var zoomControls: some View {
         HStack(spacing: 2) {
             Button {
-                withAnimation { zoomScale = max(zoomScale - 0.25, 0.5) }
+                withAnimation {
+                    zoomScale = max(zoomScale - 0.25, 0.5)
+                    lastZoomScale = zoomScale
+                }
             } label: {
                 Image(systemName: "minus.magnifyingglass")
             }
 
             Button {
-                withAnimation { zoomScale = 1.0 }
+                withAnimation {
+                    zoomScale = 1.0
+                    lastZoomScale = 1.0
+                }
             } label: {
                 Text("\(Int(zoomScale * 100))%")
                     .font(.caption.monospacedDigit())
@@ -308,7 +344,10 @@ struct CanvasContainerView: View {
             }
 
             Button {
-                withAnimation { zoomScale = min(zoomScale + 0.25, 3.0) }
+                withAnimation {
+                    zoomScale = min(zoomScale + 0.25, 3.0)
+                    lastZoomScale = zoomScale
+                }
             } label: {
                 Image(systemName: "plus.magnifyingglass")
             }
