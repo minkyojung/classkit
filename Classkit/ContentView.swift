@@ -1,62 +1,44 @@
-//
-//  ContentView.swift
-//  Classkit
-//
-//  Created by William Jung on 3/23/26.
-//
-
 import SwiftUI
 import SwiftData
 
-enum AppRole: String {
-    case teacher
-    case student
-}
-
 struct ContentView: View {
-    @Query private var teachers: [Teacher]
-    @State private var hasCompletedSetup = false
-    @State private var selectedRole: AppRole?
-
-    private var currentTeacher: Teacher? {
-        teachers.first
-    }
+    @State private var authManager = AuthManager()
 
     var body: some View {
         Group {
-            if let role = selectedRole {
-                switch role {
-                case .teacher:
-                    if currentTeacher != nil || hasCompletedSetup {
-                        MainView()
-                            .toolbar {
-                                ToolbarItem(placement: .navigation) {
-                                    roleSwitchButton
-                                }
+            if authManager.isLoading && !authManager.isSignedIn {
+                ProgressView("로딩 중...")
+            } else if authManager.isSignedIn {
+                if authManager.isTeacher {
+                    MainView()
+                        .toolbar {
+                            ToolbarItem(placement: .navigation) {
+                                signOutButton
                             }
-                    } else {
-                        ProfileSetupView {
-                            hasCompletedSetup = true
                         }
-                    }
-                case .student:
-                    StudentMainView(onSwitchRole: { selectedRole = nil })
+                } else if authManager.isStudent {
+                    StudentMainView(onSwitchRole: {
+                        Task { await authManager.signOut() }
+                    })
+                } else {
+                    // Profile not loaded yet or role not set
+                    ProgressView("프로필 로딩 중...")
+                        .task { await authManager.fetchProfile() }
                 }
             } else {
-                RoleSelectionView(onSelect: { role in
-                    selectedRole = role
-                })
+                LoginView()
             }
         }
+        .environment(authManager)
     }
 
-    private var roleSwitchButton: some View {
+    private var signOutButton: some View {
         Button {
-            selectedRole = nil
+            Task { await authManager.signOut() }
         } label: {
-            Image(systemName: "arrow.left.arrow.right")
+            Image(systemName: "rectangle.portrait.and.arrow.right")
         }
-        .accessibilityLabel("역할 전환")
+        .accessibilityLabel("로그아웃")
     }
 }
 
