@@ -26,7 +26,9 @@ struct ClasskitApp: App {
             AssignmentAttachment.self,
             Submission.self,
             ScannedProblem.self,
-            CanvasOverlay.self
+            CanvasOverlay.self,
+            ExamPaper.self,
+            ExamQuestion.self
         ])
     }
 }

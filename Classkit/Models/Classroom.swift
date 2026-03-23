@@ -28,6 +28,9 @@ final class Classroom {
     @Relationship(deleteRule: .cascade)
     var scannedProblems: [ScannedProblem]
 
+    @Relationship(deleteRule: .cascade)
+    var examPapers: [ExamPaper]
+
     @Relationship(inverse: \Teacher.classrooms)
     var teacher: Teacher?
 
@@ -52,6 +55,7 @@ final class Classroom {
         self.documents = []
         self.assignments = []
         self.scannedProblems = []
+        self.examPapers = []
         self.createdAt = Date()
     }
 }
