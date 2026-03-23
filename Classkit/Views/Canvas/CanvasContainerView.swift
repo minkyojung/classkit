@@ -1,5 +1,6 @@
 import SwiftUI
 import SwiftData
+import PencilKit
 
 struct CanvasContainerView: View {
     @Bindable var lesson: Lesson
@@ -9,6 +10,7 @@ struct CanvasContainerView: View {
     @State private var currentPageIndex = 0
     @State private var selectedBackground: NoteBackgroundType = .blank
     @State private var showBackgroundPicker = false
+    @State private var showCompleteConfirm = false
 
     private var currentNote: LessonNote? {
         lesson.notes.first { $0.pageIndex == currentPageIndex }
@@ -52,6 +54,8 @@ struct CanvasContainerView: View {
 
                 ToolbarItemGroup(placement: .primaryAction) {
                     backgroundPickerButton
+                    shareButton
+                    completeButton
                     pageControls
                 }
 
@@ -61,6 +65,12 @@ struct CanvasContainerView: View {
             }
             .popover(isPresented: $showBackgroundPicker) {
                 backgroundPickerContent
+            }
+            .alert("수업 완료", isPresented: $showCompleteConfirm) {
+                Button("완료", role: .destructive) { completeLesson() }
+                Button("취소", role: .cancel) { }
+            } message: {
+                Text("수업을 완료하시겠습니까? 노트가 저장됩니다.")
             }
         }
     }
@@ -196,6 +206,62 @@ struct CanvasContainerView: View {
                     }
                     .buttonStyle(.plain)
                 }
+            }
+        }
+    }
+
+    // MARK: - Complete Button
+
+    private var completeButton: some View {
+        Button {
+            showCompleteConfirm = true
+        } label: {
+            Image(systemName: "checkmark.circle")
+        }
+        .disabled(lesson.status == .completed)
+        .accessibilityLabel("수업 완료")
+    }
+
+    private func completeLesson() {
+        saveCurrentPage()
+        lesson.status = .completed
+        dismiss()
+    }
+
+    // MARK: - Share Button
+
+    private var shareButton: some View {
+        ShareLink(
+            item: exportNotesAsPDF(),
+            preview: SharePreview(lesson.title, icon: Image(systemName: "doc.fill"))
+        )
+        .accessibilityLabel("PDF로 공유")
+    }
+
+    private func exportNotesAsPDF() -> Data {
+        let pageSize = CGRect(x: 0, y: 0, width: 768, height: 1024)
+        let renderer = UIGraphicsPDFRenderer(bounds: pageSize)
+
+        return renderer.pdfData { context in
+            for note in sortedNotes {
+                context.beginPage()
+
+                // Draw background
+                UIColor.white.setFill()
+                UIRectFill(pageSize)
+
+                // Draw note content
+                if let drawing = try? PKDrawing(data: note.drawingData) {
+                    let image = drawing.image(from: pageSize, scale: 2.0)
+                    image.draw(in: pageSize)
+                }
+            }
+
+            // If no notes, create blank page
+            if sortedNotes.isEmpty {
+                context.beginPage()
+                UIColor.white.setFill()
+                UIRectFill(pageSize)
             }
         }
     }
