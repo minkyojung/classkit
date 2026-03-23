@@ -11,6 +11,8 @@ struct CanvasContainerView: View {
     @State private var selectedBackground: NoteBackgroundType = .blank
     @State private var showBackgroundPicker = false
     @State private var showCompleteConfirm = false
+    @State private var showShareSheet = false
+    @State private var exportedPDFData: Data?
 
     private var currentNote: LessonNote? {
         lesson.notes.first { $0.pageIndex == currentPageIndex }
@@ -231,11 +233,19 @@ struct CanvasContainerView: View {
     // MARK: - Share Button
 
     private var shareButton: some View {
-        ShareLink(
-            item: exportNotesAsPDF(),
-            preview: SharePreview(lesson.title, icon: Image(systemName: "doc.fill"))
-        )
+        Button {
+            saveCurrentPage()
+            exportedPDFData = exportNotesAsPDF()
+            showShareSheet = true
+        } label: {
+            Image(systemName: "square.and.arrow.up")
+        }
         .accessibilityLabel("PDF로 공유")
+        .sheet(isPresented: $showShareSheet) {
+            if let data = exportedPDFData {
+                ShareSheet(activityItems: [data])
+            }
+        }
     }
 
     private func exportNotesAsPDF() -> Data {

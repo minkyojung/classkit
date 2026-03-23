@@ -9,6 +9,8 @@ struct PDFCanvasView: View {
     @Environment(\.dismiss) private var dismiss
 
     @State private var currentPageIndex = 0
+    @State private var showShareSheet = false
+    @State private var exportedPDFData: Data?
 
     private var currentAnnotation: PDFPageAnnotation? {
         document.annotations.first { $0.pageIndex == currentPageIndex }
@@ -103,10 +105,17 @@ struct PDFCanvasView: View {
     // MARK: - Share
 
     private var shareButton: some View {
-        ShareLink(
-            item: exportAnnotatedPDF(),
-            preview: SharePreview(document.title, icon: Image(systemName: "doc.fill"))
-        )
+        Button {
+            exportedPDFData = exportAnnotatedPDF()
+            showShareSheet = true
+        } label: {
+            Image(systemName: "square.and.arrow.up")
+        }
+        .sheet(isPresented: $showShareSheet) {
+            if let data = exportedPDFData {
+                ShareSheet(activityItems: [data])
+            }
+        }
     }
 
     private func exportAnnotatedPDF() -> Data {
