@@ -1,14 +1,14 @@
 import SwiftUI
 
 struct ClassroomListView: View {
-    let classrooms: [Classroom]
-    @Binding var selectedClassroom: Classroom?
+    let classrooms: [ClassroomDTO]
+    @Binding var selectedClassroomId: UUID?
     var onAdd: () -> Void
-    var onDelete: (Classroom) -> Void
+    var onDelete: (ClassroomDTO) -> Void
 
     @State private var searchText = ""
 
-    private var filteredClassrooms: [Classroom] {
+    private var filteredClassrooms: [ClassroomDTO] {
         if searchText.isEmpty {
             return classrooms
         }
@@ -18,9 +18,9 @@ struct ClassroomListView: View {
     }
 
     var body: some View {
-        List(filteredClassrooms, selection: $selectedClassroom) { classroom in
+        List(filteredClassrooms, selection: $selectedClassroomId) { classroom in
             ClassroomRow(classroom: classroom)
-                .tag(classroom)
+                .tag(classroom.id)
                 .swipeActions(edge: .trailing, allowsFullSwipe: false) {
                     Button(role: .destructive) {
                         onDelete(classroom)

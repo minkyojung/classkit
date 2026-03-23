@@ -4,34 +4,41 @@ import PDFKit
 import UniformTypeIdentifiers
 
 struct ClassroomDetailView: View {
-    @Bindable var classroom: Classroom
-    @Environment(\.modelContext) private var modelContext
+    let classroomDTO: ClassroomDTO
+    var apiService: APIService
 
-    @State private var activeLesson: Lesson?
+    @Environment(\.modelContext) private var modelContext
+    @State private var lessons: [LessonDTO] = []
+    @State private var assignments: [AssignmentDTO] = []
+    @State private var isLoading = false
+
+    // Local SwiftData lesson for canvas (bridge until full migration)
+    @State private var activeLocalLesson: Lesson?
     @State private var newLessonTitle = ""
     @State private var showNewLessonAlert = false
-    @State private var showPDFImporter = false
-    @State private var activePDFDocument: PDFDocumentModel?
     @State private var showCreateAssignment = false
+    @State private var showPDFImporter = false
     @State private var showScanner = false
+    @State private var activePDFDocument: PDFDocumentModel?
+
+    private var studentColor: Color {
+        Color(hex: classroomDTO.colorHex) ?? .blue
+    }
 
     var body: some View {
         ScrollView {
-            VStack(spacing: 20) {
-                studentInfoCard
-                scheduleCard
+            VStack(spacing: 24) {
+                heroProfileCard
                 startLessonButton
-                lessonsCard
-                assignmentsCard
-                ScoreChartView(classroom: classroom)
-                scannedProblemsCard
-                documentsCard
+                lessonsSection
+                assignmentsSection
+                inviteCodeSection
             }
             .padding()
         }
-        .navigationTitle(classroom.studentName)
+        .navigationTitle(classroomDTO.studentName)
         .navigationBarTitleDisplayMode(.large)
-        .fullScreenCover(item: $activeLesson) { lesson in
+        .fullScreenCover(item: $activeLocalLesson) { lesson in
             CanvasContainerView(lesson: lesson)
         }
         .fullScreenCover(item: $activePDFDocument) { doc in
@@ -45,10 +52,12 @@ struct ClassroomDetailView: View {
             handlePDFImport(result)
         }
         .sheet(isPresented: $showCreateAssignment) {
-            CreateAssignmentSheet(classroom: classroom)
-        }
-        .sheet(isPresented: $showScanner) {
-            ScannerView(classroom: classroom)
+            CreateAssignmentSheetAPI(
+                classroomId: classroomDTO.id,
+                apiService: apiService
+            ) {
+                Task { await loadAssignments() }
+            }
         }
         .alert("새 수업", isPresented: $showNewLessonAlert) {
             TextField("수업 제목 (예: 3단원 이차방정식)", text: $newLessonTitle)
@@ -56,6 +65,109 @@ struct ClassroomDetailView: View {
             Button("취소", role: .cancel) { newLessonTitle = "" }
         } message: {
             Text("수업 제목을 입력하세요")
+        }
+        .task {
+            await loadLessons()
+            await loadAssignments()
+        }
+    }
+
+    // MARK: - Hero Profile Card
+
+    private var heroProfileCard: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            HStack(spacing: 16) {
+                Circle()
+                    .fill(studentColor.gradient)
+                    .frame(width: 72, height: 72)
+                    .shadow(color: studentColor.opacity(0.3), radius: 8, y: 4)
+                    .overlay {
+                        Text(String(classroomDTO.studentName.prefix(1)))
+                            .font(.title.bold())
+                            .foregroundStyle(.white)
+                    }
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(classroomDTO.studentName)
+                        .font(.title2.bold())
+
+                    Text(classroomDTO.studentGrade)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+
+                Spacer()
+            }
+
+            let hasSchedule = !(classroomDTO.scheduleDay ?? "").isEmpty || !(classroomDTO.scheduleTime ?? "").isEmpty
+            let hasSubject = !(classroomDTO.subjectName ?? "").isEmpty
+
+            if hasSubject || hasSchedule {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 8) {
+                        if let subject = classroomDTO.subjectName, !subject.isEmpty {
+                            TagChip(icon: "book.fill", text: subject, color: .blue)
+                        }
+                        if let day = classroomDTO.scheduleDay, !day.isEmpty {
+                            TagChip(icon: "calendar", text: day, color: .orange)
+                        }
+                        if let time = classroomDTO.scheduleTime, !time.isEmpty {
+                            TagChip(icon: "clock", text: time, color: .purple)
+                        }
+                    }
+                }
+            }
+
+            if let memo = classroomDTO.memo, !memo.isEmpty {
+                Text(memo)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .padding(.top, 2)
+            }
+        }
+        .padding(20)
+        .background {
+            RoundedRectangle(cornerRadius: 20)
+                .fill(studentColor.opacity(0.06))
+        }
+        .overlay {
+            RoundedRectangle(cornerRadius: 20)
+                .strokeBorder(studentColor.opacity(0.1), lineWidth: 1)
+        }
+    }
+
+    // MARK: - Invite Code
+
+    private var inviteCodeSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            SectionHeader(title: "초대 코드", icon: "person.badge.plus")
+
+            if let code = classroomDTO.inviteCode {
+                HStack {
+                    Text(code)
+                        .font(.title2.monospaced().bold())
+                        .foregroundStyle(studentColor)
+
+                    Spacer()
+
+                    Button {
+                        UIPasteboard.general.string = code
+                    } label: {
+                        Label("복사", systemImage: "doc.on.doc")
+                            .font(.subheadline)
+                    }
+                    .buttonStyle(.bordered)
+                }
+                .padding(16)
+                .background {
+                    RoundedRectangle(cornerRadius: 14)
+                        .fill(Color(.secondarySystemGroupedBackground))
+                }
+
+                Text("학생에게 이 코드를 공유하면 교실에 참여할 수 있습니다")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
         }
     }
 
@@ -68,10 +180,11 @@ struct ClassroomDetailView: View {
             Label("수업 시작", systemImage: "pencil.tip.crop.circle")
                 .font(.headline)
                 .frame(maxWidth: .infinity)
-                .padding()
-                .background(Color.accentColor)
+                .padding(.vertical, 16)
+                .background(Color.accentColor.gradient)
                 .foregroundStyle(.white)
-                .clipShape(RoundedRectangle(cornerRadius: 12))
+                .clipShape(RoundedRectangle(cornerRadius: 14))
+                .shadow(color: .accentColor.opacity(0.25), radius: 8, y: 4)
         }
     }
 
@@ -79,243 +192,143 @@ struct ClassroomDetailView: View {
         let title = newLessonTitle.trimmingCharacters(in: .whitespaces)
         guard !title.isEmpty else { return }
 
-        let lesson = Lesson(date: Date(), title: title, status: .inProgress)
-        lesson.classroom = classroom
-        modelContext.insert(lesson)
+        // Create in Supabase
+        let lessonDTO = LessonDTO(
+            id: UUID(),
+            classroomId: classroomDTO.id,
+            title: title,
+            status: "inProgress"
+        )
+
+        // Also create local SwiftData lesson for canvas
+        let localLesson = Lesson(date: Date(), title: title, status: .inProgress)
+        modelContext.insert(localLesson)
+
+        Task {
+            do {
+                _ = try await apiService.createLesson(lessonDTO)
+                await loadLessons()
+            } catch {
+                // Lesson still works locally even if API fails
+            }
+        }
 
         newLessonTitle = ""
-        activeLesson = lesson
+        activeLocalLesson = localLesson
     }
 
-    // MARK: - Student Info Card
+    // MARK: - Lessons Section
 
-    private var studentInfoCard: some View {
-        GroupBox {
-            VStack(alignment: .leading, spacing: 12) {
-                HStack(spacing: 16) {
-                    Circle()
-                        .fill(Color(hex: classroom.colorHex) ?? .blue)
-                        .frame(width: 56, height: 56)
-                        .overlay {
-                            Text(String(classroom.studentName.prefix(1)))
-                                .font(.title2.bold())
-                                .foregroundStyle(.white)
-                        }
-
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(classroom.studentName)
-                            .font(.title3.bold())
-                        HStack(spacing: 8) {
-                            Text(classroom.studentGrade)
-                            if let school = classroom.studentSchool, !school.isEmpty {
-                                Text("·")
-                                Text(school)
-                            }
-                        }
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                    }
-
-                    Spacer()
-                }
-
-                if let subject = classroom.subject {
-                    Divider()
-                    Label(subject.name, systemImage: "book.fill")
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                }
-
-                if !classroom.memo.isEmpty {
-                    Divider()
-                    Text(classroom.memo)
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                }
-            }
-        } label: {
-            Label("학생 정보", systemImage: "person.fill")
+    private func loadLessons() async {
+        do {
+            lessons = try await apiService.fetchLessons(classroomId: classroomDTO.id)
+        } catch {
+            // Keep showing existing data
         }
     }
 
-    // MARK: - Schedule Card
+    private var lessonsSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            SectionHeader(title: "수업 기록", icon: "list.bullet.clipboard.fill")
 
-    private var scheduleCard: some View {
-        GroupBox {
+            if lessons.isEmpty {
+                EmptyStateCard(
+                    icon: "doc.text",
+                    message: "수업을 시작하면 여기에 기록됩니다"
+                )
+            } else {
+                VStack(spacing: 0) {
+                    ForEach(Array(lessons.enumerated()), id: \.element.id) { index, lesson in
+                        LessonDTORowView(lesson: lesson, isLast: index == lessons.count - 1)
+                            .padding(.vertical, 6)
+                    }
+                }
+                .padding(16)
+                .background {
+                    RoundedRectangle(cornerRadius: 14)
+                        .fill(Color(.secondarySystemGroupedBackground))
+                }
+            }
+        }
+    }
+
+    // MARK: - Assignments Section
+
+    private func loadAssignments() async {
+        do {
+            assignments = try await apiService.fetchAssignments(classroomId: classroomDTO.id)
+        } catch {
+            // Keep showing existing data
+        }
+    }
+
+    private var assignmentsSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
             HStack {
-                if !classroom.scheduleDay.isEmpty {
-                    Label(classroom.scheduleDay, systemImage: "calendar")
-                }
-                if !classroom.scheduleTime.isEmpty {
-                    Label(classroom.scheduleTime, systemImage: "clock")
-                }
+                SectionHeader(title: "과제", icon: "tray.full.fill")
                 Spacer()
+                let pending = assignments.filter { $0.status == "assigned" }.count
+                if pending > 0 {
+                    Text("\(pending)개 미제출")
+                        .font(.caption.weight(.medium))
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 4)
+                        .background(Color.orange, in: Capsule())
+                }
             }
-            .font(.subheadline)
-        } label: {
-            Label("수업 일정", systemImage: "clock.fill")
-        }
-    }
 
-    // MARK: - Assignments Card
-
-    private var assignmentsCard: some View {
-        GroupBox {
-            VStack(spacing: 8) {
-                if classroom.assignments.isEmpty {
-                    Button {
-                        showCreateAssignment = true
-                    } label: {
-                        Label("과제 출제하기", systemImage: "plus.app")
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 8)
+            if assignments.isEmpty {
+                Button {
+                    showCreateAssignment = true
+                } label: {
+                    HStack {
+                        Image(systemName: "plus.circle.fill")
+                            .font(.title3)
+                            .foregroundStyle(Color.accentColor)
+                        Text("과제 출제하기")
+                            .font(.subheadline.weight(.medium))
+                            .foregroundStyle(.primary)
+                        Spacer()
+                        Image(systemName: "chevron.right")
+                            .font(.caption)
+                            .foregroundStyle(.tertiary)
                     }
-                } else {
-                    ForEach(classroom.assignments.sorted { $0.createdAt > $1.createdAt }) { assignment in
-                        NavigationLink {
-                            AssignmentDetailView(assignment: assignment)
-                        } label: {
-                            AssignmentRowView(assignment: assignment)
-                        }
-                        .buttonStyle(.plain)
+                    .padding(16)
+                    .background {
+                        RoundedRectangle(cornerRadius: 14)
+                            .fill(Color(.secondarySystemGroupedBackground))
+                    }
+                }
+                .buttonStyle(.plain)
+            } else {
+                VStack(spacing: 0) {
+                    ForEach(assignments) { assignment in
+                        AssignmentDTORowView(assignment: assignment)
+                            .padding(.vertical, 6)
                     }
 
                     Divider()
+                        .padding(.vertical, 8)
 
                     Button {
                         showCreateAssignment = true
                     } label: {
                         Label("과제 추가", systemImage: "plus")
-                            .font(.subheadline)
+                            .font(.subheadline.weight(.medium))
+                            .foregroundStyle(Color.accentColor)
                     }
                 }
-            }
-        } label: {
-            HStack {
-                Label("과제", systemImage: "tray.full.fill")
-                Spacer()
-                if !classroom.assignments.isEmpty {
-                    let pending = classroom.assignments.filter { $0.status == .assigned }.count
-                    if pending > 0 {
-                        Text("\(pending)개 미제출")
-                            .font(.caption)
-                            .foregroundStyle(.orange)
-                    }
+                .padding(16)
+                .background {
+                    RoundedRectangle(cornerRadius: 14)
+                        .fill(Color(.secondarySystemGroupedBackground))
                 }
             }
         }
     }
 
-    // MARK: - Scanned Problems Card
-
-    private var scannedProblemsCard: some View {
-        GroupBox {
-            VStack(spacing: 8) {
-                if classroom.scannedProblems.isEmpty {
-                    Button {
-                        showScanner = true
-                    } label: {
-                        Label("문제 스캔하기", systemImage: "doc.text.viewfinder")
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 8)
-                    }
-                } else {
-                    ForEach(classroom.scannedProblems.sorted { $0.createdAt > $1.createdAt }) { problem in
-                        HStack {
-                            if let uiImage = UIImage(data: problem.imageData) {
-                                Image(uiImage: uiImage)
-                                    .resizable()
-                                    .scaledToFill()
-                                    .frame(width: 44, height: 44)
-                                    .clipShape(RoundedRectangle(cornerRadius: 6))
-                            }
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(problem.title)
-                                    .font(.subheadline.weight(.medium))
-                                    .lineLimit(1)
-                                Text(problem.recognizedText.prefix(50))
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                                    .lineLimit(1)
-                            }
-                            Spacer()
-                            Text(problem.createdAt, format: .dateTime.month().day())
-                                .font(.caption2)
-                                .foregroundStyle(.tertiary)
-                        }
-                        .padding(.vertical, 2)
-                    }
-
-                    Divider()
-
-                    Button {
-                        showScanner = true
-                    } label: {
-                        Label("스캔 추가", systemImage: "plus")
-                            .font(.subheadline)
-                    }
-                }
-            }
-        } label: {
-            Label("스캔 문제", systemImage: "doc.text.viewfinder")
-        }
-    }
-
-    // MARK: - Documents Card
-
-    private var documentsCard: some View {
-        GroupBox {
-            VStack(spacing: 8) {
-                if classroom.documents.isEmpty {
-                    Button {
-                        showPDFImporter = true
-                    } label: {
-                        Label("PDF 교재 추가", systemImage: "doc.badge.plus")
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 8)
-                    }
-                } else {
-                    ForEach(classroom.documents.sorted { $0.createdAt > $1.createdAt }) { doc in
-                        Button {
-                            activePDFDocument = doc
-
-                        } label: {
-                            HStack {
-                                Image(systemName: "doc.fill")
-                                    .foregroundStyle(.red)
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text(doc.title)
-                                        .font(.subheadline.weight(.medium))
-                                    Text("\(doc.pageCount)페이지")
-                                        .font(.caption)
-                                        .foregroundStyle(.secondary)
-                                }
-                                Spacer()
-                                Image(systemName: "chevron.right")
-                                    .font(.caption)
-                                    .foregroundStyle(.tertiary)
-                            }
-                            .padding(.vertical, 4)
-                        }
-                        .buttonStyle(.plain)
-                    }
-
-                    Divider()
-
-                    Button {
-                        showPDFImporter = true
-                    } label: {
-                        Label("PDF 추가", systemImage: "plus")
-                            .font(.subheadline)
-                    }
-                }
-            }
-        } label: {
-            Label("교재", systemImage: "books.vertical.fill")
-        }
-    }
-
-    // MARK: - PDF Import
+    // MARK: - PDF Import (still local)
 
     private func handlePDFImport(_ result: Result<[URL], Error>) {
         guard case .success(let urls) = result,
@@ -335,58 +348,44 @@ struct ClassroomDetailView: View {
 
         let title = url.deletingPathExtension().lastPathComponent
         let document = PDFDocumentModel(title: title, fileData: data, pageCount: pageCount)
-        document.classroom = classroom
         modelContext.insert(document)
-
         activePDFDocument = document
-        // activePDFDocument triggers fullScreenCover
-    }
-
-    // MARK: - Lessons Card
-
-    private var lessonsCard: some View {
-        GroupBox {
-            if classroom.lessons.isEmpty {
-                ContentUnavailableView(
-                    "아직 수업 기록이 없습니다",
-                    systemImage: "doc.text",
-                    description: Text("수업을 시작하면 여기에 기록됩니다")
-                )
-                .frame(minHeight: 120)
-            } else {
-                ForEach(classroom.lessons.sorted { $0.date > $1.date }) { lesson in
-                    Button {
-                        activeLesson = lesson
-                    } label: {
-                        LessonRowView(lesson: lesson)
-                    }
-                    .buttonStyle(.plain)
-                }
-            }
-        } label: {
-            Label("수업 기록", systemImage: "list.bullet.clipboard.fill")
-        }
     }
 }
 
-// MARK: - Lesson Row
+// MARK: - Lesson DTO Row
 
-struct LessonRowView: View {
-    let lesson: Lesson
+struct LessonDTORowView: View {
+    let lesson: LessonDTO
+    var isLast: Bool = false
 
     var body: some View {
-        HStack {
+        HStack(spacing: 12) {
+            VStack(spacing: 0) {
+                Circle()
+                    .fill(statusColor)
+                    .frame(width: 10, height: 10)
+                if !isLast {
+                    Rectangle()
+                        .fill(Color(.separator))
+                        .frame(width: 1)
+                        .frame(maxHeight: .infinity)
+                }
+            }
+            .frame(width: 10)
+
             VStack(alignment: .leading, spacing: 2) {
                 Text(lesson.title)
                     .font(.subheadline.weight(.medium))
-                Text(lesson.date, style: .date)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                if let date = lesson.date {
+                    Text(date, style: .date)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
             }
             Spacer()
             statusBadge
         }
-        .padding(.vertical, 4)
     }
 
     private var statusBadge: some View {
@@ -394,24 +393,225 @@ struct LessonRowView: View {
             .font(.caption2.weight(.medium))
             .padding(.horizontal, 8)
             .padding(.vertical, 3)
-            .background(statusColor.opacity(0.15))
+            .background(statusColor.opacity(0.12))
             .foregroundStyle(statusColor)
             .clipShape(Capsule())
     }
 
     private var statusText: String {
         switch lesson.status {
-        case .scheduled: "예정"
-        case .inProgress: "진행 중"
-        case .completed: "완료"
+        case "inProgress": "진행 중"
+        case "completed": "완료"
+        default: "예정"
         }
     }
 
     private var statusColor: Color {
         switch lesson.status {
-        case .scheduled: .orange
-        case .inProgress: .blue
-        case .completed: .green
+        case "inProgress": .blue
+        case "completed": .green
+        default: .orange
+        }
+    }
+}
+
+// MARK: - Assignment DTO Row
+
+struct AssignmentDTORowView: View {
+    let assignment: AssignmentDTO
+
+    var body: some View {
+        HStack(spacing: 12) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(assignment.title)
+                    .font(.subheadline.weight(.medium))
+                if let dueDate = assignment.dueDate {
+                    Text("마감: \(dueDate, format: .dateTime.month().day())")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            Spacer()
+            statusBadge
+        }
+    }
+
+    private var statusBadge: some View {
+        Text(statusText)
+            .font(.caption2.weight(.medium))
+            .padding(.horizontal, 8)
+            .padding(.vertical, 3)
+            .background(statusColor.opacity(0.12))
+            .foregroundStyle(statusColor)
+            .clipShape(Capsule())
+    }
+
+    private var statusText: String {
+        switch assignment.status {
+        case "submitted": "제출완료"
+        case "reviewed": "첨삭완료"
+        default: "미제출"
+        }
+    }
+
+    private var statusColor: Color {
+        switch assignment.status {
+        case "submitted": .blue
+        case "reviewed": .green
+        default: .orange
+        }
+    }
+}
+
+// MARK: - Create Assignment (API version)
+
+struct CreateAssignmentSheetAPI: View {
+    let classroomId: UUID
+    var apiService: APIService
+    var onCreated: () -> Void
+
+    @Environment(\.dismiss) private var dismiss
+    @State private var title = ""
+    @State private var instruction = ""
+    @State private var hasDueDate = false
+    @State private var dueDate = Calendar.current.date(byAdding: .day, value: 7, to: Date()) ?? Date()
+    @State private var isCreating = false
+    @State private var errorMessage: String?
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section("과제 정보") {
+                    TextField("과제 제목", text: $title)
+                    TextField("과제 설명 (선택)", text: $instruction, axis: .vertical)
+                        .lineLimit(3...6)
+                }
+
+                Section {
+                    Toggle("마감일 설정", isOn: $hasDueDate)
+                    if hasDueDate {
+                        DatePicker("마감일", selection: $dueDate, displayedComponents: [.date, .hourAndMinute])
+                    }
+                }
+
+                if let error = errorMessage {
+                    Section {
+                        Text(error).foregroundStyle(.red).font(.caption)
+                    }
+                }
+            }
+            .navigationTitle("과제 출제")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("취소") { dismiss() }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("출제") { createAssignment() }
+                        .disabled(title.trimmingCharacters(in: .whitespaces).isEmpty || isCreating)
+                        .fontWeight(.semibold)
+                }
+            }
+        }
+    }
+
+    private func createAssignment() {
+        isCreating = true
+        let dto = AssignmentDTO(
+            id: UUID(),
+            classroomId: classroomId,
+            title: title.trimmingCharacters(in: .whitespaces),
+            instruction: instruction.trimmingCharacters(in: .whitespaces).isEmpty ? nil : instruction.trimmingCharacters(in: .whitespaces),
+            dueDate: hasDueDate ? dueDate : nil,
+            status: "assigned"
+        )
+
+        Task {
+            do {
+                _ = try await apiService.createAssignment(dto)
+                onCreated()
+                dismiss()
+            } catch {
+                errorMessage = "과제 생성 실패: \(error.localizedDescription)"
+                isCreating = false
+            }
+        }
+    }
+}
+
+// MARK: - Reusable Components
+
+struct SectionHeader: View {
+    let title: String
+    let icon: String
+
+    var body: some View {
+        Label(title, systemImage: icon)
+            .font(.headline)
+            .foregroundStyle(.primary)
+    }
+}
+
+struct TagChip: View {
+    let icon: String
+    let text: String
+    let color: Color
+
+    var body: some View {
+        Label(text, systemImage: icon)
+            .font(.caption.weight(.medium))
+            .foregroundStyle(color)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 6)
+            .background(color.opacity(0.1), in: Capsule())
+    }
+}
+
+struct EmptyStateCard: View {
+    let icon: String
+    let message: String
+
+    var body: some View {
+        VStack(spacing: 10) {
+            Image(systemName: icon)
+                .font(.title2)
+                .foregroundStyle(.quaternary)
+            Text(message)
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 32)
+        .background {
+            RoundedRectangle(cornerRadius: 14)
+                .fill(Color(.secondarySystemGroupedBackground))
+        }
+    }
+}
+
+struct MaterialActionCard: View {
+    let icon: String
+    let title: String
+    let color: Color
+
+    var body: some View {
+        VStack(spacing: 12) {
+            Image(systemName: icon)
+                .font(.title2)
+                .foregroundStyle(color)
+            Text(title)
+                .font(.subheadline.weight(.medium))
+                .foregroundStyle(.primary)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 28)
+        .background {
+            RoundedRectangle(cornerRadius: 14)
+                .fill(Color(.secondarySystemGroupedBackground))
+        }
+        .overlay {
+            RoundedRectangle(cornerRadius: 14)
+                .strokeBorder(color.opacity(0.15), lineWidth: 1)
         }
     }
 }

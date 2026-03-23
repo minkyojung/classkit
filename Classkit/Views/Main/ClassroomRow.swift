@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct ClassroomRow: View {
-    let classroom: Classroom
+    let classroom: ClassroomDTO
 
     var body: some View {
         HStack(spacing: 12) {
@@ -20,8 +20,8 @@ struct ClassroomRow: View {
                     .fontWeight(.medium)
 
                 HStack(spacing: 4) {
-                    if let subject = classroom.subject {
-                        Text(subject.name)
+                    if let subject = classroom.subjectName, !subject.isEmpty {
+                        Text(subject)
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }
@@ -33,8 +33,8 @@ struct ClassroomRow: View {
 
             Spacer()
 
-            if !classroom.scheduleDay.isEmpty {
-                Text(classroom.scheduleDay)
+            if let day = classroom.scheduleDay, !day.isEmpty {
+                Text(day)
                     .font(.caption2)
                     .foregroundStyle(.tertiary)
             }

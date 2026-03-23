@@ -1,19 +1,21 @@
 import SwiftUI
-import SwiftData
+import Auth
 
 struct CreateClassroomSheet: View {
-    @Environment(\.modelContext) private var modelContext
+    @Environment(AuthManager.self) private var authManager
     @Environment(\.dismiss) private var dismiss
-    @Query private var teachers: [Teacher]
+    var apiService: APIService
+    var onCreated: () -> Void
 
     @State private var studentName = ""
     @State private var studentGrade = ""
-    @State private var studentSchool = ""
     @State private var subjectName = ""
     @State private var scheduleDay = ""
     @State private var scheduleTime = ""
     @State private var memo = ""
     @State private var selectedColorHex = "#007AFF"
+    @State private var isCreating = false
+    @State private var errorMessage: String?
 
     private let gradeOptions = [
         "5세", "6세", "7세",
@@ -44,7 +46,6 @@ struct CreateClassroomSheet: View {
                             Text(grade).tag(grade)
                         }
                     }
-                    TextField("학교 (선택)", text: $studentSchool)
                 }
 
                 Section("과목") {
@@ -81,6 +82,14 @@ struct CreateClassroomSheet: View {
                     TextField("학생 특이사항 (선택)", text: $memo, axis: .vertical)
                         .lineLimit(3...6)
                 }
+
+                if let error = errorMessage {
+                    Section {
+                        Text(error)
+                            .foregroundStyle(.red)
+                            .font(.caption)
+                    }
+                }
             }
             .navigationTitle("새 교실")
             .navigationBarTitleDisplayMode(.inline)
@@ -90,7 +99,7 @@ struct CreateClassroomSheet: View {
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("생성") { createClassroom() }
-                        .disabled(!isValid)
+                        .disabled(!isValid || isCreating)
                         .fontWeight(.semibold)
                 }
             }
@@ -98,34 +107,30 @@ struct CreateClassroomSheet: View {
     }
 
     private func createClassroom() {
-        let teacher = teachers.first
+        guard let userId = authManager.currentUser?.id else { return }
+        isCreating = true
 
-        let trimmedSubjectName = subjectName.trimmingCharacters(in: .whitespaces)
-        var subject: Subject?
-        if !trimmedSubjectName.isEmpty {
-            subject = Subject(name: trimmedSubjectName, gradeLevel: studentGrade)
-            subject?.teacher = teacher
-            modelContext.insert(subject!)
-        }
-
-        let classroom = Classroom(
+        let dto = ClassroomDTO(
+            id: UUID(),
+            teacherId: userId,
             studentName: studentName.trimmingCharacters(in: .whitespaces),
             studentGrade: studentGrade,
-            subject: subject,
-            scheduleDay: scheduleDay.trimmingCharacters(in: .whitespaces),
-            scheduleTime: scheduleTime.trimmingCharacters(in: .whitespaces),
-            memo: memo.trimmingCharacters(in: .whitespaces),
+            subjectName: subjectName.trimmingCharacters(in: .whitespaces).isEmpty ? nil : subjectName.trimmingCharacters(in: .whitespaces),
+            scheduleDay: scheduleDay.trimmingCharacters(in: .whitespaces).isEmpty ? nil : scheduleDay.trimmingCharacters(in: .whitespaces),
+            scheduleTime: scheduleTime.trimmingCharacters(in: .whitespaces).isEmpty ? nil : scheduleTime.trimmingCharacters(in: .whitespaces),
+            memo: memo.trimmingCharacters(in: .whitespaces).isEmpty ? nil : memo.trimmingCharacters(in: .whitespaces),
             colorHex: selectedColorHex
         )
-        classroom.studentSchool = studentSchool.trimmingCharacters(in: .whitespaces)
-        classroom.teacher = teacher
 
-        modelContext.insert(classroom)
-        dismiss()
+        Task {
+            do {
+                _ = try await apiService.createClassroom(dto)
+                onCreated()
+                dismiss()
+            } catch {
+                errorMessage = "교실 생성 실패: \(error.localizedDescription)"
+                isCreating = false
+            }
+        }
     }
-}
-
-#Preview {
-    CreateClassroomSheet()
-        .modelContainer(for: Classroom.self, inMemory: true)
 }
