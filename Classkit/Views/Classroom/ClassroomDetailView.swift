@@ -14,6 +14,7 @@ struct ClassroomDetailView: View {
     @State private var showPDFImporter = false
     @State private var showPDFCanvas = false
     @State private var activePDFDocument: PDFDocumentModel?
+    @State private var showCreateAssignment = false
 
     var body: some View {
         ScrollView {
@@ -22,6 +23,7 @@ struct ClassroomDetailView: View {
                 scheduleCard
                 startLessonButton
                 lessonsCard
+                assignmentsCard
                 documentsCard
             }
             .padding()
@@ -44,6 +46,9 @@ struct ClassroomDetailView: View {
             allowsMultipleSelection: false
         ) { result in
             handlePDFImport(result)
+        }
+        .sheet(isPresented: $showCreateAssignment) {
+            CreateAssignmentSheet(classroom: classroom)
         }
         .alert("새 수업", isPresented: $showNewLessonAlert) {
             TextField("수업 제목 (예: 3단원 이차방정식)", text: $newLessonTitle)
@@ -150,6 +155,50 @@ struct ClassroomDetailView: View {
             .font(.subheadline)
         } label: {
             Label("수업 일정", systemImage: "clock.fill")
+        }
+    }
+
+    // MARK: - Assignments Card
+
+    private var assignmentsCard: some View {
+        GroupBox {
+            VStack(spacing: 8) {
+                if classroom.assignments.isEmpty {
+                    Button {
+                        showCreateAssignment = true
+                    } label: {
+                        Label("과제 출제하기", systemImage: "plus.app")
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 8)
+                    }
+                } else {
+                    ForEach(classroom.assignments.sorted { $0.createdAt > $1.createdAt }) { assignment in
+                        AssignmentRowView(assignment: assignment)
+                    }
+
+                    Divider()
+
+                    Button {
+                        showCreateAssignment = true
+                    } label: {
+                        Label("과제 추가", systemImage: "plus")
+                            .font(.subheadline)
+                    }
+                }
+            }
+        } label: {
+            HStack {
+                Label("과제", systemImage: "tray.full.fill")
+                Spacer()
+                if !classroom.assignments.isEmpty {
+                    let pending = classroom.assignments.filter { $0.status == .assigned }.count
+                    if pending > 0 {
+                        Text("\(pending)개 미제출")
+                            .font(.caption)
+                            .foregroundStyle(.orange)
+                    }
+                }
+            }
         }
     }
 
