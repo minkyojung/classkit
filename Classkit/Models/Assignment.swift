@@ -44,7 +44,7 @@ final class Assignment {
 final class AssignmentAttachment {
     var id: UUID
     var fileName: String
-    var fileData: Data
+    @Attribute(.externalStorage) var fileData: Data
     var fileType: String
 
     @Relationship(inverse: \Assignment.attachments)

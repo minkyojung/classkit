@@ -4,11 +4,11 @@ import SwiftData
 @Model
 final class Submission {
     var id: UUID
-    var drawingData: Data
+    @Attribute(.externalStorage) var drawingData: Data
     var submittedAt: Date
 
     // Feedback from teacher
-    var feedbackDrawingData: Data?
+    @Attribute(.externalStorage) var feedbackDrawingData: Data?
     var score: Int?
     var comment: String?
     var reviewedAt: Date?

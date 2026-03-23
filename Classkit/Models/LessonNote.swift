@@ -12,7 +12,7 @@ enum NoteBackgroundType: String, Codable, CaseIterable {
 final class LessonNote {
     var id: UUID
     var pageIndex: Int
-    var drawingData: Data
+    @Attribute(.externalStorage) var drawingData: Data
     var backgroundType: NoteBackgroundType
     var createdAt: Date
     var updatedAt: Date

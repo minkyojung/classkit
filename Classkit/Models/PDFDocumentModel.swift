@@ -5,7 +5,7 @@ import SwiftData
 final class PDFDocumentModel {
     var id: UUID
     var title: String
-    var fileData: Data
+    @Attribute(.externalStorage) var fileData: Data
     var pageCount: Int
     var createdAt: Date
 
@@ -29,7 +29,7 @@ final class PDFDocumentModel {
 final class PDFPageAnnotation {
     var id: UUID
     var pageIndex: Int
-    var drawingData: Data
+    @Attribute(.externalStorage) var drawingData: Data
     var updatedAt: Date
 
     @Relationship(inverse: \PDFDocumentModel.annotations)
