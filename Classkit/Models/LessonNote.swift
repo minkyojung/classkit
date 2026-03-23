@@ -1,7 +1,7 @@
 import Foundation
 import SwiftData
 
-enum NoteBackgroundType: String, Codable {
+enum NoteBackgroundType: String, Codable, CaseIterable {
     case blank
     case lined
     case grid

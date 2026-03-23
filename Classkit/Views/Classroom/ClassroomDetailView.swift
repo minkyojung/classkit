@@ -1,19 +1,68 @@
 import SwiftUI
+import SwiftData
 
 struct ClassroomDetailView: View {
-    let classroom: Classroom
+    @Bindable var classroom: Classroom
+    @Environment(\.modelContext) private var modelContext
+
+    @State private var showCanvas = false
+    @State private var activeLesson: Lesson?
+    @State private var newLessonTitle = ""
+    @State private var showNewLessonAlert = false
 
     var body: some View {
         ScrollView {
             VStack(spacing: 20) {
                 studentInfoCard
                 scheduleCard
+                startLessonButton
                 lessonsCard
             }
             .padding()
         }
         .navigationTitle(classroom.studentName)
         .navigationBarTitleDisplayMode(.large)
+        .fullScreenCover(isPresented: $showCanvas) {
+            if let lesson = activeLesson {
+                CanvasContainerView(lesson: lesson)
+            }
+        }
+        .alert("새 수업", isPresented: $showNewLessonAlert) {
+            TextField("수업 제목 (예: 3단원 이차방정식)", text: $newLessonTitle)
+            Button("시작") { startNewLesson() }
+            Button("취소", role: .cancel) { newLessonTitle = "" }
+        } message: {
+            Text("수업 제목을 입력하세요")
+        }
+    }
+
+    // MARK: - Start Lesson
+
+    private var startLessonButton: some View {
+        Button {
+            showNewLessonAlert = true
+        } label: {
+            Label("수업 시작", systemImage: "pencil.tip.crop.circle")
+                .font(.headline)
+                .frame(maxWidth: .infinity)
+                .padding()
+                .background(Color.accentColor)
+                .foregroundStyle(.white)
+                .clipShape(RoundedRectangle(cornerRadius: 12))
+        }
+    }
+
+    private func startNewLesson() {
+        let title = newLessonTitle.trimmingCharacters(in: .whitespaces)
+        guard !title.isEmpty else { return }
+
+        let lesson = Lesson(date: Date(), title: title, status: .inProgress)
+        lesson.classroom = classroom
+        modelContext.insert(lesson)
+
+        activeLesson = lesson
+        newLessonTitle = ""
+        showCanvas = true
     }
 
     // MARK: - Student Info Card
@@ -98,8 +147,14 @@ struct ClassroomDetailView: View {
                 )
                 .frame(minHeight: 120)
             } else {
-                ForEach(classroom.lessons) { lesson in
-                    LessonRowView(lesson: lesson)
+                ForEach(classroom.lessons.sorted { $0.date > $1.date }) { lesson in
+                    Button {
+                        activeLesson = lesson
+                        showCanvas = true
+                    } label: {
+                        LessonRowView(lesson: lesson)
+                    }
+                    .buttonStyle(.plain)
                 }
             }
         } label: {
