@@ -7,12 +7,10 @@ struct ClassroomDetailView: View {
     @Bindable var classroom: Classroom
     @Environment(\.modelContext) private var modelContext
 
-    @State private var showCanvas = false
     @State private var activeLesson: Lesson?
     @State private var newLessonTitle = ""
     @State private var showNewLessonAlert = false
     @State private var showPDFImporter = false
-    @State private var showPDFCanvas = false
     @State private var activePDFDocument: PDFDocumentModel?
     @State private var showCreateAssignment = false
 
@@ -30,15 +28,11 @@ struct ClassroomDetailView: View {
         }
         .navigationTitle(classroom.studentName)
         .navigationBarTitleDisplayMode(.large)
-        .fullScreenCover(isPresented: $showCanvas) {
-            if let lesson = activeLesson {
-                CanvasContainerView(lesson: lesson)
-            }
+        .fullScreenCover(item: $activeLesson) { lesson in
+            CanvasContainerView(lesson: lesson)
         }
-        .fullScreenCover(isPresented: $showPDFCanvas) {
-            if let doc = activePDFDocument {
-                PDFCanvasView(document: doc)
-            }
+        .fullScreenCover(item: $activePDFDocument) { doc in
+            PDFCanvasView(document: doc)
         }
         .fileImporter(
             isPresented: $showPDFImporter,
@@ -83,9 +77,8 @@ struct ClassroomDetailView: View {
         lesson.classroom = classroom
         modelContext.insert(lesson)
 
-        activeLesson = lesson
         newLessonTitle = ""
-        showCanvas = true
+        activeLesson = lesson
     }
 
     // MARK: - Student Info Card
@@ -224,7 +217,7 @@ struct ClassroomDetailView: View {
                     ForEach(classroom.documents.sorted { $0.createdAt > $1.createdAt }) { doc in
                         Button {
                             activePDFDocument = doc
-                            showPDFCanvas = true
+
                         } label: {
                             HStack {
                                 Image(systemName: "doc.fill")
@@ -285,7 +278,7 @@ struct ClassroomDetailView: View {
         modelContext.insert(document)
 
         activePDFDocument = document
-        showPDFCanvas = true
+        // activePDFDocument triggers fullScreenCover
     }
 
     // MARK: - Lessons Card
@@ -303,7 +296,6 @@ struct ClassroomDetailView: View {
                 ForEach(classroom.lessons.sorted { $0.date > $1.date }) { lesson in
                     Button {
                         activeLesson = lesson
-                        showCanvas = true
                     } label: {
                         LessonRowView(lesson: lesson)
                     }
