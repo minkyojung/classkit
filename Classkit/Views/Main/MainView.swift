@@ -15,7 +15,7 @@ struct MainView: View {
                 classrooms: classrooms,
                 selectedClassroom: $selectedClassroom,
                 onAdd: { showCreateSheet = true },
-                onDelete: deleteClassrooms
+                onDelete: deleteClassroom
             )
         } detail: {
             if let classroom = selectedClassroom {
@@ -33,14 +33,11 @@ struct MainView: View {
         }
     }
 
-    private func deleteClassrooms(at offsets: IndexSet) {
-        for index in offsets {
-            let classroom = classrooms[index]
-            if selectedClassroom?.id == classroom.id {
-                selectedClassroom = nil
-            }
-            modelContext.delete(classroom)
+    private func deleteClassroom(_ classroom: Classroom) {
+        if selectedClassroom?.id == classroom.id {
+            selectedClassroom = nil
         }
+        modelContext.delete(classroom)
     }
 }
 

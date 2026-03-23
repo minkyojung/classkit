@@ -79,13 +79,17 @@ struct CanvasContainerView: View {
 
     // MARK: - Drawing Binding
 
+    private func noteForCurrentPage() -> LessonNote? {
+        lesson.notes.first { $0.pageIndex == currentPageIndex }
+    }
+
     private var drawingBinding: Binding<Data> {
         Binding(
             get: {
-                currentNote?.drawingData ?? Data()
+                noteForCurrentPage()?.drawingData ?? Data()
             },
             set: { newData in
-                if let note = currentNote {
+                if let note = noteForCurrentPage() {
                     note.drawingData = newData
                     note.updatedAt = Date()
                 } else {
@@ -95,6 +99,7 @@ struct CanvasContainerView: View {
                         backgroundType: selectedBackground
                     )
                     note.lesson = lesson
+                    lesson.notes.append(note)
                     modelContext.insert(note)
                 }
             }

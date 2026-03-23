@@ -4,7 +4,7 @@ struct ClassroomListView: View {
     let classrooms: [Classroom]
     @Binding var selectedClassroom: Classroom?
     var onAdd: () -> Void
-    var onDelete: (IndexSet) -> Void
+    var onDelete: (Classroom) -> Void
 
     @State private var searchText = ""
 
@@ -23,9 +23,7 @@ struct ClassroomListView: View {
                 .tag(classroom)
                 .swipeActions(edge: .trailing, allowsFullSwipe: false) {
                     Button(role: .destructive) {
-                        if let index = classrooms.firstIndex(of: classroom) {
-                            onDelete(IndexSet(integer: index))
-                        }
+                        onDelete(classroom)
                     } label: {
                         Label("삭제", systemImage: "trash")
                     }

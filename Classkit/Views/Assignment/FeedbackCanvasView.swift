@@ -77,8 +77,13 @@ struct FeedbackCanvasView: View {
         NavigationStack {
             Form {
                 Section("점수") {
-                    TextField("점수 (예: 85)", text: $score)
+                    TextField("점수 (0~100)", text: $score)
                         .keyboardType(.numberPad)
+                    if let parsed = Int(score), (parsed < 0 || parsed > 100) {
+                        Text("0~100 사이의 점수를 입력하세요")
+                            .font(.caption)
+                            .foregroundStyle(.red)
+                    }
                 }
 
                 Section("코멘트") {
@@ -91,10 +96,17 @@ struct FeedbackCanvasView: View {
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("확인") { showScoreSheet = false }
+                        .disabled(isScoreInvalid)
                 }
             }
         }
         .presentationDetents([.medium])
+    }
+
+    private var isScoreInvalid: Bool {
+        guard !score.isEmpty else { return false }
+        guard let parsed = Int(score) else { return true }
+        return parsed < 0 || parsed > 100
     }
 
     // MARK: - Save

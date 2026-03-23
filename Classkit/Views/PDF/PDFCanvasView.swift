@@ -55,13 +55,17 @@ struct PDFCanvasView: View {
 
     // MARK: - Annotation Binding
 
+    private func annotationForCurrentPage() -> PDFPageAnnotation? {
+        document.annotations.first { $0.pageIndex == currentPageIndex }
+    }
+
     private var annotationBinding: Binding<Data> {
         Binding(
             get: {
-                currentAnnotation?.drawingData ?? Data()
+                annotationForCurrentPage()?.drawingData ?? Data()
             },
             set: { newData in
-                if let annotation = currentAnnotation {
+                if let annotation = annotationForCurrentPage() {
                     annotation.drawingData = newData
                     annotation.updatedAt = Date()
                 } else {
@@ -70,6 +74,7 @@ struct PDFCanvasView: View {
                         drawingData: newData
                     )
                     annotation.document = document
+                    document.annotations.append(annotation)
                     modelContext.insert(annotation)
                 }
             }
